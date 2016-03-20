@@ -10,9 +10,7 @@ import (
 	"time"
 
 	util "github.com/chzchzchz/zetcd/util"
-
 	etcd "github.com/coreos/etcd/clientv3"
-	lease "github.com/coreos/etcd/lease"
 )
 
 type zkEtcd struct {
@@ -28,7 +26,7 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 	switch op.Flags {
 	case 0:
 	case FlagEphemeral:
-		opts = append(opts, etcd.WithLease(lease.LeaseID(z.s.id)))
+		opts = append(opts, etcd.WithLease(etcd.LeaseID(z.s.id)))
 	default:
 		// support seq flag
 		panic("unsupported create flags")

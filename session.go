@@ -7,7 +7,6 @@ import (
 
 	"github.com/coreos/etcd/Godeps/_workspace/src/golang.org/x/net/context"
 	etcd "github.com/coreos/etcd/clientv3"
-	lease "github.com/coreos/etcd/lease"
 )
 
 type SessionPool struct {
@@ -39,7 +38,7 @@ func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
 	}
 
 	ctx, cancel := context.WithCancel(c.Ctx())
-	kach, kaerr := c.KeepAlive(ctx, lease.LeaseID(id))
+	kach, kaerr := c.KeepAlive(ctx, etcd.LeaseID(id))
 	if kaerr != nil {
 		return nil, kaerr
 	}
@@ -128,7 +127,7 @@ func (sp *SessionPool) Auth(zk net.Conn) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	lid := lease.LeaseID(lcr.ID)
+	lid := etcd.LeaseID(lcr.ID)
 
 	fmt.Println("session: TTL ", lcr.TTL)
 
