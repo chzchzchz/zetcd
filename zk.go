@@ -35,6 +35,10 @@ func DispatchZK(zk ZK, xid Xid, op interface{}) error {
 		return zk.GetData(xid, op)
 	case *SetDataRequest:
 		return zk.SetData(xid, op)
+	case *ExistsRequest:
+		return zk.Exists(xid, op)
+	case *SyncRequest:
+		return zk.Sync(xid, op)
 	default:
 		fmt.Printf("unexpected type %d %T\n", xid, op)
 	}

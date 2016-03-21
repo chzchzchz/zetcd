@@ -82,8 +82,7 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 	default:
 		return err
 	}
-	zxid := ZXid(resp.Header.Revision)
-	z.s.Send(xid, zxid, &CreateResponse{op.Path})
+	z.s.Send(xid, ZXid(resp.Header.Revision), &CreateResponse{op.Path})
 	return nil
 }
 
@@ -356,7 +355,7 @@ func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) error {
 	return nil
 }
 
-func (z *zkEtcd) SetAcl(xid Xid, op *SetAclRequest) error           { panic("setAcl") }
+func (z *zkEtcd) SetAcl(xid Xid, op *SetAclRequest) error { panic("setAcl") }
 
 func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
 	p := mkPath(op.Path)
@@ -383,12 +382,26 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
 	return nil
 }
 
-func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error               { panic("sync") }
-func (z *zkEtcd) Multi(xid Xid, op *MultiRequest) error             { panic("multi") }
-func (z *zkEtcd) Close(xid Xid, op *CloseRequest) error             { panic("close") }
-func (z *zkEtcd) SetAuth(xid Xid, op *SetAuthRequest) error         { panic("setAuth") }
+func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error {
+	// linearized read
+	resp, err := z.s.c.Get(z.s.c.Ctx(), "/zk/ver/"+mkPath(op.Path))
+	if err != nil {
+		return err
+	}
+	if len(resp.Kvs) == 0 {
+		errResp := ErrCode(errNoNode)
+		z.s.Send(xid, 0, &errResp)
+		return nil
+	}
+	z.s.Send(xid, ZXid(resp.Header.Revision), &CreateResponse{op.Path})
+	return nil
+}
 
-func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error   { panic("setWatches") }
+func (z *zkEtcd) Multi(xid Xid, op *MultiRequest) error     { panic("multi") }
+func (z *zkEtcd) Close(xid Xid, op *CloseRequest) error     { panic("close") }
+func (z *zkEtcd) SetAuth(xid Xid, op *SetAuthRequest) error { panic("setAuth") }
+
+func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error { panic("setWatches") }
 
 func mkPath(zkPath string) string {
 	p := path.Clean(zkPath)
