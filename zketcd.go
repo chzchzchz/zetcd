@@ -357,11 +357,37 @@ func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) error {
 }
 
 func (z *zkEtcd) SetAcl(xid Xid, op *SetAclRequest) error           { panic("setAcl") }
-func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error { panic("getChildren") }
+
+func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
+	p := mkPath(op.Path)
+	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(statGets(p)...).Commit()
+	if err != nil {
+		return err
+	}
+
+	s := statTxn(txnresp)
+	if len(p) != 2 && s.Ctime == 0 {
+		errResp := ErrCode(errNoNode)
+		z.s.Send(xid, ZXid(txnresp.Header.Revision), &errResp)
+		return nil
+	}
+
+	children := txnresp.Responses[6].GetResponseRange()
+	resp := &GetChildrenResponse{}
+	for _, kv := range children.Kvs {
+		zkkey := strings.Replace(string(kv.Key), getListPfx(p), "", 1)
+		resp.Children = append(resp.Children, zkkey)
+	}
+
+	z.s.Send(xid, ZXid(children.Header.Revision), resp)
+	return nil
+}
+
 func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error               { panic("sync") }
 func (z *zkEtcd) Multi(xid Xid, op *MultiRequest) error             { panic("multi") }
 func (z *zkEtcd) Close(xid Xid, op *CloseRequest) error             { panic("close") }
 func (z *zkEtcd) SetAuth(xid Xid, op *SetAuthRequest) error         { panic("setAuth") }
+
 func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error   { panic("setWatches") }
 
 func mkPath(zkPath string) string {
