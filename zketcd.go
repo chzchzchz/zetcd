@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	util "github.com/chzchzchz/zetcd/util"
 	etcd "github.com/coreos/etcd/clientv3"
+	v3sync "github.com/coreos/etcd/clientv3/concurrency"
 )
 
 type zkEtcd struct {
@@ -37,7 +37,7 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 	key := "/zk/key/" + p
 	pkey := "/zk/cver/" + pp
 
-	applyf := func(s util.STM) error {
+	applyf := func(s v3sync.STM) error {
 		if s.Rev(pkey) == 0 && len(pp) != 2 {
 			// no parent
 			return ErrNoNode
@@ -65,7 +65,7 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 		return nil
 	}
 
-	resp, err := util.NewSTMSerializable(z.s.c.Ctx(), z.s.c, applyf)
+	resp, err := v3sync.NewSTMSerializable(z.s.c.Ctx(), z.s.c, applyf)
 	// XXX do I need valid zxid on errors?
 	switch err {
 	case ErrNoNode:
@@ -188,7 +188,7 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 	key := "/zk/key/" + p
 	pkey := "/zk/cver/" + pp
 
-	applyf := func(s util.STM) error {
+	applyf := func(s v3sync.STM) error {
 		if s.Rev(pkey) == 0 && len(pp) != 2 {
 			// no parent
 			return ErrNoNode
@@ -220,7 +220,7 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 		return nil
 	}
 
-	resp, err := util.NewSTMSerializable(z.s.c.Ctx(), z.s.c, applyf)
+	resp, err := v3sync.NewSTMSerializable(z.s.c.Ctx(), z.s.c, applyf)
 
 	switch err {
 	case ErrNoNode:
@@ -241,7 +241,28 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 	return nil
 }
 
-func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error { panic("exists") }
+func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
+	if op.Watch {
+		panic("watch unsupported on exists")
+	}
+
+	gets := statGets(mkPath(op.Path))
+	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(gets...).Commit()
+	if err != nil {
+		return err
+	}
+
+	exResp := &ExistsResponse{}
+	exResp.Stat = statTxn(txnresp)
+	if exResp.Stat.Mtime == 0 {
+		errResp := ErrCode(errNoNode)
+		z.s.Send(xid, 0, &errResp)
+		return nil
+	}
+
+	z.s.Send(xid, ZXid(txnresp.Header.Revision), exResp)
+	return nil
+}
 
 func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 	if op.Watch {
@@ -270,7 +291,7 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) error {
 	p := mkPath(op.Path)
 	var statResp etcd.TxnResponse
-	applyf := func(s util.STM) error {
+	applyf := func(s v3sync.STM) error {
 		if s.Rev("/zk/ver/"+p) == 0 {
 			return ErrNoNode
 		}
@@ -290,7 +311,7 @@ func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) error {
 		statResp = *resp
 		return nil
 	}
-	resp, err := util.NewSTMSerializable(z.s.c.Ctx(), z.s.c, applyf)
+	resp, err := v3sync.NewSTMSerializable(z.s.c.Ctx(), z.s.c, applyf)
 
 	switch err {
 	case nil:
