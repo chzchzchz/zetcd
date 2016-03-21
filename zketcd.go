@@ -150,10 +150,6 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 	resp := &GetChildren2Response{}
 	p := mkPath(op.Path)
 
-	if op.Watch {
-		panic("watch unsupported on getChildren2")
-	}
-
 	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(statGets(p)...).Commit()
 	if err != nil {
 		return err
@@ -172,7 +168,13 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 		fmt.Println("child", zkkey, kv.Key)
 		resp.Children = append(resp.Children, zkkey)
 	}
-	z.s.Send(xid, ZXid(children.Header.Revision), resp)
+
+	zxid := ZXid(children.Header.Revision)
+	if op.Watch {
+		z.s.w.watch(zxid, xid, p, opGetChildren2, func(ZXid) { panic("hi getch2") })
+	}
+	z.s.w.wait(zxid, p, opGetChildren2)
+	z.s.Send(xid, zxid, resp)
 	return nil
 }
 
@@ -241,11 +243,8 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 }
 
 func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
-	if op.Watch {
-		panic("watch unsupported on exists")
-	}
-
-	gets := statGets(mkPath(op.Path))
+	p := mkPath(op.Path)
+	gets := statGets(p)
 	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(gets...).Commit()
 	if err != nil {
 		return err
@@ -259,16 +258,18 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
 		return nil
 	}
 
-	z.s.Send(xid, ZXid(txnresp.Header.Revision), exResp)
+	zxid := ZXid(txnresp.Header.Revision)
+	if op.Watch {
+		z.s.w.watch(zxid, xid, p, opExists, func(ZXid) { panic("hi exists") })
+	}
+	z.s.w.wait(zxid, p, opExists)
+	z.s.Send(xid, zxid, exResp)
 	return nil
 }
 
 func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
-	if op.Watch {
-		panic("watch unsupported on get data")
-	}
-
-	gets := statGets(mkPath(op.Path))
+	p := mkPath(op.Path)
+	gets := statGets(p)
 	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(gets...).Commit()
 	if err != nil {
 		return err
@@ -282,8 +283,14 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 		return nil
 	}
 
+	zxid := ZXid(txnresp.Header.Revision)
+	if op.Watch {
+		z.s.w.watch(zxid, xid, p, opGetData, func(ZXid) { panic("hi getdata") })
+	}
+	z.s.w.wait(zxid, p, opGetData)
+
 	datResp.Data = []byte(txnresp.Responses[2].GetResponseRange().Kvs[0].Value)
-	z.s.Send(xid, ZXid(txnresp.Header.Revision), datResp)
+	z.s.Send(xid, zxid, datResp)
 	return nil
 }
 
@@ -397,8 +404,13 @@ func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error {
 	return nil
 }
 
-func (z *zkEtcd) Multi(xid Xid, op *MultiRequest) error     { panic("multi") }
-func (z *zkEtcd) Close(xid Xid, op *CloseRequest) error     { panic("close") }
+func (z *zkEtcd) Multi(xid Xid, op *MultiRequest) error { panic("multi") }
+
+func (z *zkEtcd) Close(xid Xid, op *CloseRequest) error {
+	z.s.Send(xid, 0, &CloseResponse{})
+	return ErrConnectionClosed
+}
+
 func (z *zkEtcd) SetAuth(xid Xid, op *SetAuthRequest) error { panic("setAuth") }
 
 func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error { panic("setWatches") }

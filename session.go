@@ -20,6 +20,7 @@ type Session struct {
 	outc      chan []byte
 	c         *etcd.Client
 	leaseZXid ZXid
+	w         *watches
 
 	// stopc is closed to shutdown session
 	stopc chan struct{}
@@ -36,6 +37,7 @@ func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
 		stopc: make(chan struct{}),
 		donec: make(chan struct{}),
 	}
+	s.w = newWatches(s)
 
 	ctx, cancel := context.WithCancel(c.Ctx())
 	kach, kaerr := c.KeepAlive(ctx, etcd.LeaseID(id))
@@ -104,6 +106,7 @@ func (s *Session) Send(xid Xid, zxid ZXid, resp interface{}) error {
 
 func (s *Session) Close() {
 	close(s.stopc)
+	s.w.close()
 	<-s.donec
 }
 
