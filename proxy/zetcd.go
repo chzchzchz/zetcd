@@ -13,7 +13,7 @@ func main() {
 	fmt.Println("hello word")
 
 	// talk to the etcd3 server
-	cfg := etcd.Config{Endpoints: []string{"localhost:2378"}}
+	cfg := etcd.Config{Endpoints: []string{"localhost:2379"}}
 	c, err := etcd.New(cfg)
 
 	// listen on zookeeper server port

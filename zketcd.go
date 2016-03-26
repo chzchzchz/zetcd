@@ -89,7 +89,7 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 func statGets(p string) []etcd.Op {
 	return []etcd.Op{
 		etcd.OpGet("/zk/ctime/" + p),
-		etcd.OpGet("/zk/mtime/"+p, etcd.WithSort(etcd.SortByModifiedRev, etcd.SortDescend)),
+		etcd.OpGet("/zk/mtime/"+p, etcd.WithSort(etcd.SortByModRevision, etcd.SortDescend)),
 		etcd.OpGet("/zk/key/" + p),
 		etcd.OpGet("/zk/ver/" + p),
 		etcd.OpGet("/zk/cver/" + p),
