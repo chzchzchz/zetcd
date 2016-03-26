@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
-	"fmt"
 	"path"
 	"strings"
 	"time"
@@ -82,7 +81,9 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 	default:
 		return err
 	}
-	z.s.Send(xid, ZXid(resp.Header.Revision), &CreateResponse{op.Path})
+	xzid := ZXid(resp.Header.Revision)
+	z.s.w.wait(xzid, p, EventNodeCreated)
+	z.s.Send(xid, xzid, &CreateResponse{op.Path})
 	return nil
 }
 
@@ -165,15 +166,23 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 	children := txnresp.Responses[6].GetResponseRange()
 	for _, kv := range children.Kvs {
 		zkkey := strings.Replace(string(kv.Key), getListPfx(p), "", 1)
-		fmt.Println("child", zkkey, kv.Key)
 		resp.Children = append(resp.Children, zkkey)
 	}
 
 	zxid := ZXid(children.Header.Revision)
+	z.s.w.wait(zxid, p, EventNodeChildrenChanged)
+
 	if op.Watch {
-		z.s.w.watch(zxid, xid, p, opGetChildren2, func(ZXid) { panic("hi getch2") })
+		f := func(newzxid ZXid) {
+			wresp := &WatcherEvent{
+				Type:  EventNodeChildrenChanged,
+				State: StateConnected,
+				Path:  op.Path,
+			}
+			z.s.Send(xid, newzxid, wresp)
+		}
+		z.s.w.watch(zxid, xid, p, EventNodeChildrenChanged, f)
 	}
-	z.s.w.wait(zxid, p, opGetChildren2)
 	z.s.Send(xid, zxid, resp)
 	return nil
 }
@@ -238,7 +247,9 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 	}
 
 	delResp := &DeleteResponse{}
-	z.s.Send(xid, ZXid(resp.Header.Revision), delResp)
+	zxid := ZXid(resp.Header.Revision)
+	z.s.w.wait(zxid, p, EventNodeDeleted)
+	z.s.Send(xid, zxid, delResp)
 	return nil
 }
 
@@ -252,17 +263,31 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
 
 	exResp := &ExistsResponse{}
 	exResp.Stat = statTxn(txnresp)
+	zxid := ZXid(txnresp.Header.Revision)
+	z.s.w.wait(zxid, p, EventNodeCreated)
+
+	if op.Watch {
+		ev := EventNodeDeleted
+		if exResp.Stat.Mtime == 0 {
+			ev = EventNodeCreated
+		}
+		f := func(newzxid ZXid) {
+			wresp := &WatcherEvent{
+				Type:  ev,
+				State: StateConnected,
+				Path:  op.Path,
+			}
+			z.s.Send(xid, newzxid, wresp)
+		}
+		z.s.w.watch(zxid, xid, p, ev, f)
+	}
+
 	if exResp.Stat.Mtime == 0 {
 		errResp := ErrCode(errNoNode)
 		z.s.Send(xid, 0, &errResp)
 		return nil
 	}
 
-	zxid := ZXid(txnresp.Header.Revision)
-	if op.Watch {
-		z.s.w.watch(zxid, xid, p, opExists, func(ZXid) { panic("hi exists") })
-	}
-	z.s.w.wait(zxid, p, opExists)
 	z.s.Send(xid, zxid, exResp)
 	return nil
 }
@@ -284,11 +309,19 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 	}
 
 	zxid := ZXid(txnresp.Header.Revision)
-	if op.Watch {
-		z.s.w.watch(zxid, xid, p, opGetData, func(ZXid) { panic("hi getdata") })
-	}
-	z.s.w.wait(zxid, p, opGetData)
+	z.s.w.wait(zxid, p, EventNodeDataChanged)
 
+	if op.Watch {
+		f := func(newzxid ZXid) {
+			wresp := &WatcherEvent{
+				Type:  EventNodeDataChanged,
+				State: StateConnected,
+				Path:  op.Path,
+			}
+			z.s.Send(xid, newzxid, wresp)
+		}
+		z.s.w.watch(zxid, xid, p, EventNodeDataChanged, f)
+	}
 	datResp.Data = []byte(txnresp.Responses[2].GetResponseRange().Kvs[0].Value)
 	z.s.Send(xid, zxid, datResp)
 	return nil

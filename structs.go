@@ -157,6 +157,12 @@ type Stat struct {
 	Pzxid          ZXid  // last modified children
 }
 
+type WatcherEvent struct {
+	Type  EventType
+	State State
+	Path  string
+}
+
 type pathWatchRequest struct {
 	Path  string
 	Watch bool

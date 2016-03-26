@@ -40,6 +40,31 @@ func TestCreateGet(t *testing.T) {
 	})
 }
 
+func TestGetDataW(t *testing.T) {
+	runTest(t, func(t *testing.T, c *zk.Conn) {
+		if _, err := c.Create("/abc", []byte("data1"), 0, nil); err != nil {
+			t.Fatal(err)
+		}
+		_, _, ch, werr := c.GetW("/abc")
+		if werr != nil {
+			t.Fatal(werr)
+		}
+		select {
+		case <-ch:
+			t.Fatalf("should block on get channel")
+		case <-time.After(10 * time.Millisecond):
+		}
+		if _, err := c.Set("/abc", []byte("a"), -1); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-ch:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("took too long to get data update")
+		}
+	})
+}
+
 func TestSync(t *testing.T) {
 	runTest(t, func(t *testing.T, c *zk.Conn) {
 		if _, err := c.Create("/abc", []byte(""), 0, nil); err != nil {
@@ -61,6 +86,54 @@ func TestExists(t *testing.T) {
 		}
 		if ok, _, err := c.Exists("/ab"); ok {
 			t.Fatalf("expected it to not exist %v %v", err, ok)
+		}
+	})
+}
+
+func TestExistsW(t *testing.T) {
+	runTest(t, func(t *testing.T, c *zk.Conn) {
+		// test create
+		ok, _, ch, err := c.ExistsW("/abc")
+		if ok || err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Create("/abc", []byte(""), 0, nil); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatalf("took too long to get creation exists event")
+		}
+
+		// test (multi) set
+		for i := 0; i < 2; i++ {
+			ok, _, ch, err = c.ExistsW("/abc")
+			if !ok || err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c.Set("/abc", []byte("a"), -1); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-ch:
+				t.Fatalf("set data shouldn't trigger watcher")
+			case <-time.After(time.Second):
+			}
+		}
+
+		// test delete
+		ok, _, ch, err = c.ExistsW("/abc")
+		if !ok || err != nil {
+			t.Fatal(err)
+		}
+		if err = c.Delete("/abc", -1); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatalf("took too long to get deletion exists event")
 		}
 	})
 }
@@ -89,6 +162,52 @@ func TestChildren(t *testing.T) {
 		}
 		if len(children) != 2 {
 			t.Fatalf("expected two children, got %v", children)
+		}
+	})
+}
+
+func TestGetChildrenW(t *testing.T) {
+	runTest(t, func(t *testing.T, c *zk.Conn) {
+		if _, err := c.Create("/abc", []byte(""), 0, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		// watch for /abc/def
+		_, _, ch, err := c.ChildrenW("/abc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-ch:
+			t.Fatalf("should block")
+		case <-time.After(10 * time.Millisecond):
+		}
+		if _, err := c.Create("/abc/def", []byte(""), 0, nil); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatalf("waited to long for new child")
+		}
+
+		// watch for /abc/123
+		_, _, ch, err = c.ChildrenW("/abc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-ch:
+			t.Fatalf("should block")
+		case <-time.After(10 * time.Millisecond):
+		}
+		if _, err := c.Create("/abc/123", []byte(""), 0, nil); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-ch:
+		case <-time.After(time.Second):
+			t.Fatalf("waited to long for new child")
 		}
 	})
 }

@@ -29,6 +29,9 @@ const (
 	opClose      = -11
 	opSetAuth    = 100
 	opSetWatches = 101
+
+	// Not in protocol, used internally
+	opWatcherEvent = -2
 )
 
 type EventType int32
@@ -47,6 +50,36 @@ const (
 	FlagEphemeral = 1
 	FlagSequence  = 2
 )
+
+const (
+	StateUnknown           = State(-1)
+	StateDisconnected      = State(0)
+	StateConnecting        = State(1)
+	StateAuthFailed        = State(4)
+	StateConnectedReadOnly = State(5)
+	StateSaslAuthenticated = State(6)
+	StateExpired           = State(-112)
+	// StateAuthFailed        = State(-113)
+
+	StateConnected  = State(100)
+	StateHasSession = State(101)
+)
+
+var (
+	stateNames = map[State]string{
+		StateUnknown:           "StateUnknown",
+		StateDisconnected:      "StateDisconnected",
+		StateConnectedReadOnly: "StateConnectedReadOnly",
+		StateSaslAuthenticated: "StateSaslAuthenticated",
+		StateExpired:           "StateExpired",
+		StateAuthFailed:        "StateAuthFailed",
+		StateConnecting:        "StateConnecting",
+		StateConnected:         "StateConnected",
+		StateHasSession:        "StateHasSession",
+	}
+)
+
+type State int32
 
 var (
 	ErrConnectionClosed        = errors.New("zk: connection closed")

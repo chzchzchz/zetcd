@@ -45,7 +45,6 @@ func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
 		return nil, kaerr
 	}
 	go func() {
-		defer close(s.outc)
 		defer cancel()
 		for {
 			select {
@@ -78,9 +77,14 @@ func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
 func (s *Session) Send(xid Xid, zxid ZXid, resp interface{}) error {
 	buf := make([]byte, 1024)
 	hdr := &responseHeader{Xid: xid, Zxid: zxid, Err: errOk}
+
+	_, isEv := resp.(*WatcherEvent)
+	if isEv {
+		hdr.Xid = -1
+	}
+
 	ec, hasErr := resp.(*ErrCode)
 	if hasErr {
-		fmt.Println("sending err ", *ec)
 		hdr.Err = *ec
 	}
 	n1, err1 := encodePacket(buf[4:], hdr)
@@ -108,6 +112,7 @@ func (s *Session) Close() {
 	close(s.stopc)
 	s.w.close()
 	<-s.donec
+	close(s.outc)
 }
 
 func NewSessionPool(client *etcd.Client) *SessionPool {
