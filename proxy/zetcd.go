@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -10,14 +11,17 @@ import (
 )
 
 func main() {
-	fmt.Println("hello word")
+	etcdaddr := flag.String("endpoint", "localhost:2379", "etcd3 client address")
+	zkaddr := flag.String("zkaddr", ":2181", "address for serving zookeeper clients")
+	flag.Parse()
+	fmt.Println("Running zetcd proxy")
 
 	// talk to the etcd3 server
-	cfg := etcd.Config{Endpoints: []string{"localhost:2379"}}
+	cfg := etcd.Config{Endpoints: []string{*etcdaddr}}
 	c, err := etcd.New(cfg)
 
 	// listen on zookeeper server port
-	ln, err := net.Listen("tcp", ":2181")
+	ln, err := net.Listen("tcp", *zkaddr)
 	if err != nil {
 		os.Exit(-1)
 	}

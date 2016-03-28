@@ -12,8 +12,9 @@ import (
 )
 
 func main() {
+	s := flag.String("zkaddr", "127.0.0.1", "address of zookeeper server")
 	flag.Parse()
-	c, _, err := zk.Connect([]string{"127.0.0.1"}, time.Second)
+	c, _, err := zk.Connect([]string{*s}, time.Second)
 	if err != nil {
 		panic(err)
 	}
