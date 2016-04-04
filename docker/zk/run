@@ -1,0 +1,4 @@
+#!/bin/bash
+docker build -t `whoami`/zookeeper:3.4.8 .
+docker run  -p 127.0.0.1:2181:2181 -t `whoami`/zookeeper:3.4.8 . start
+
