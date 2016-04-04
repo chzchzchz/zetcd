@@ -8,6 +8,8 @@ import (
 )
 
 func handle(sp *SessionPool, c *etcd.Client, zk net.Conn) {
+	defer zk.Close()
+
 	s, err := sp.Auth(zk)
 	if err != nil {
 		fmt.Println(err)

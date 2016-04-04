@@ -83,14 +83,12 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 	}
 
 	if errResp != errOk {
-		z.s.Send(xid, 0, &errResp)
-		return nil
+		return z.s.Send(xid, 0, &errResp)
 	}
 
 	xzid := ZXid(resp.Header.Revision)
 	z.s.w.wait(xzid, p, EventNodeCreated)
-	z.s.Send(xid, xzid, &CreateResponse{op.Path})
-	return nil
+	return z.s.Send(xid, xzid, &CreateResponse{op.Path})
 }
 
 func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
@@ -105,8 +103,7 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 	resp.Stat = statTxn(txnresp)
 	if len(p) != 2 && resp.Stat.Ctime == 0 {
 		errResp := ErrCode(errNoNode)
-		z.s.Send(xid, ZXid(txnresp.Header.Revision), &errResp)
-		return nil
+		return z.s.Send(xid, ZXid(txnresp.Header.Revision), &errResp)
 	}
 
 	children := txnresp.Responses[6].GetResponseRange()
@@ -129,13 +126,12 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 		}
 		z.s.w.watch(zxid, xid, p, EventNodeChildrenChanged, f)
 	}
-	z.s.Send(xid, zxid, resp)
-	return nil
+
+	return z.s.Send(xid, zxid, resp)
 }
 
 func (z *zkEtcd) Ping(xid Xid, op *PingRequest) error {
-	z.s.Send(xid, z.s.leaseZXid, &PingResponse{})
-	return nil
+	return z.s.Send(xid, z.s.leaseZXid, &PingResponse{})
 }
 
 func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
@@ -181,12 +177,10 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 	switch err {
 	case ErrNoNode:
 		errResp := ErrCode(errNoNode)
-		z.s.Send(xid, 0, &errResp)
-		return nil
+		return z.s.Send(xid, 0, &errResp)
 	case ErrBadVersion:
 		errResp := ErrCode(errBadVersion)
-		z.s.Send(xid, 0, &errResp)
-		return nil
+		return z.s.Send(xid, 0, &errResp)
 	case nil:
 	default:
 		return err
@@ -195,8 +189,7 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 	delResp := &DeleteResponse{}
 	zxid := ZXid(resp.Header.Revision)
 	z.s.w.wait(zxid, p, EventNodeDeleted)
-	z.s.Send(xid, zxid, delResp)
-	return nil
+	return z.s.Send(xid, zxid, delResp)
 }
 
 func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
@@ -230,12 +223,10 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
 
 	if exResp.Stat.Mtime == 0 {
 		errResp := ErrCode(errNoNode)
-		z.s.Send(xid, 0, &errResp)
-		return nil
+		return z.s.Send(xid, 0, &errResp)
 	}
 
-	z.s.Send(xid, zxid, exResp)
-	return nil
+	return z.s.Send(xid, zxid, exResp)
 }
 
 func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
@@ -250,8 +241,7 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 	datResp.Stat = statTxn(txnresp)
 	if datResp.Stat.Mtime == 0 {
 		errResp := ErrCode(errNoNode)
-		z.s.Send(xid, 0, &errResp)
-		return nil
+		return z.s.Send(xid, 0, &errResp)
 	}
 
 	zxid := ZXid(txnresp.Header.Revision)
@@ -269,8 +259,7 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 		z.s.w.watch(zxid, xid, p, EventNodeDataChanged, f)
 	}
 	datResp.Data = []byte(txnresp.Responses[2].GetResponseRange().Kvs[0].Value)
-	z.s.Send(xid, zxid, datResp)
-	return nil
+	return z.s.Send(xid, zxid, datResp)
 }
 
 func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) error {
@@ -302,20 +291,17 @@ func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) error {
 	case nil:
 	case ErrNoNode:
 		errResp := ErrCode(errNoNode)
-		z.s.Send(xid, 0, &errResp)
-		return nil
+		return z.s.Send(xid, 0, &errResp)
 	case ErrBadVersion:
 		errResp := ErrCode(errBadVersion)
-		z.s.Send(xid, 0, &errResp)
-		return nil
+		return z.s.Send(xid, 0, &errResp)
 	default:
 		return nil
 	}
 
 	sdresp := &SetDataResponse{}
 	sdresp.Stat = statTxn(&statResp)
-	z.s.Send(xid, ZXid(resp.Header.Revision), sdresp)
-	return nil
+	return z.s.Send(xid, ZXid(resp.Header.Revision), sdresp)
 }
 
 func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) error {
@@ -333,12 +319,10 @@ func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) error {
 	resp.Stat = statTxn(txnresp)
 	if resp.Stat.Ctime == 0 {
 		errResp := ErrCode(errNoNode)
-		z.s.Send(xid, 0, &errResp)
-		return nil
+		return z.s.Send(xid, 0, &errResp)
 	}
 	resp.Acl = decodeACLs(resps[0].GetResponseRange().Kvs[0].Value)
-	z.s.Send(xid, ZXid(txnresp.Header.Revision), resp)
-	return nil
+	return z.s.Send(xid, ZXid(txnresp.Header.Revision), resp)
 }
 
 func (z *zkEtcd) SetAcl(xid Xid, op *SetAclRequest) error { panic("setAcl") }
@@ -353,8 +337,7 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
 	s := statTxn(txnresp)
 	if len(p) != 2 && s.Ctime == 0 {
 		errResp := ErrCode(errNoNode)
-		z.s.Send(xid, ZXid(txnresp.Header.Revision), &errResp)
-		return nil
+		return z.s.Send(xid, ZXid(txnresp.Header.Revision), &errResp)
 	}
 
 	children := txnresp.Responses[6].GetResponseRange()
@@ -364,8 +347,7 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
 		resp.Children = append(resp.Children, zkkey)
 	}
 
-	z.s.Send(xid, ZXid(children.Header.Revision), resp)
-	return nil
+	return z.s.Send(xid, ZXid(children.Header.Revision), resp)
 }
 
 func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error {
@@ -376,11 +358,9 @@ func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error {
 	}
 	if len(resp.Kvs) == 0 {
 		errResp := ErrCode(errNoNode)
-		z.s.Send(xid, 0, &errResp)
-		return nil
+		return z.s.Send(xid, 0, &errResp)
 	}
-	z.s.Send(xid, ZXid(resp.Header.Revision), &CreateResponse{op.Path})
-	return nil
+	return z.s.Send(xid, ZXid(resp.Header.Revision), &CreateResponse{op.Path})
 }
 
 func (z *zkEtcd) Multi(xid Xid, op *MultiRequest) error { panic("multi") }

@@ -45,7 +45,10 @@ func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
 		return nil, kaerr
 	}
 	go func() {
-		defer cancel()
+		defer func() {
+			cancel()
+			close(s.outc)
+		}()
 		for {
 			select {
 			case ka, ok := <-kach:
@@ -75,7 +78,7 @@ func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
 }
 
 func (s *Session) Send(xid Xid, zxid ZXid, resp interface{}) error {
-	buf := make([]byte, 1024)
+	buf := make([]byte, 2*1024*1024)
 	hdr := &responseHeader{Xid: xid, Zxid: zxid, Err: errOk}
 
 	_, isEv := resp.(*WatcherEvent)
@@ -99,6 +102,7 @@ func (s *Session) Send(xid Xid, zxid ZXid, resp interface{}) error {
 		}
 		pktlen += n2
 	}
+
 	binary.BigEndian.PutUint32(buf[:4], uint32(pktlen))
 	select {
 	case s.outc <- buf[:4+pktlen]:
@@ -112,7 +116,6 @@ func (s *Session) Close() {
 	close(s.stopc)
 	s.w.close()
 	<-s.donec
-	close(s.outc)
 }
 
 func NewSessionPool(client *etcd.Client) *SessionPool {
@@ -136,8 +139,6 @@ func (sp *SessionPool) Auth(zk net.Conn) (*Session, error) {
 		return nil, err
 	}
 	lid := etcd.LeaseID(lcr.ID)
-
-	fmt.Println("session: TTL ", lcr.TTL)
 
 	key := fmt.Sprintf("/zk/ses/%x", lcr.ID)
 	_, err = sp.c.Put(sp.c.Ctx(), key, string(req.Passwd), etcd.WithLease(lid))
