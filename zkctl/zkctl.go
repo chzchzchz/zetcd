@@ -11,6 +11,10 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 )
 
+var (
+	acl = zk.WorldACL(zk.PermAll)
+)
+
 func main() {
 	s := flag.String("zkaddr", "127.0.0.1", "address of zookeeper server")
 	flag.Parse()
@@ -79,8 +83,8 @@ func ls(c *zk.Conn, dir string) error {
 }
 
 func put(c *zk.Conn, path, data string, fl int32) error {
-	// TODO: acls
-	_, err := c.Create(path, []byte(data), fl, nil)
+	// TODO: descriptive acls
+	_, err := c.Create(path, []byte(data), fl, acl)
 	return err
 }
 
