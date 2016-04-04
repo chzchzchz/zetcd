@@ -6,13 +6,15 @@ import (
 
 func statGets(p string) []etcd.Op {
 	return []etcd.Op{
-		etcd.OpGet("/zk/ctime/" + p),
-		etcd.OpGet("/zk/mtime/"+p, etcd.WithSort(etcd.SortByModRevision, etcd.SortDescend)),
-		etcd.OpGet("/zk/key/" + p),
-		etcd.OpGet("/zk/ver/" + p),
-		etcd.OpGet("/zk/cver/" + p),
-		etcd.OpGet("/zk/aver/" + p),
-		etcd.OpGet(getListPfx(p), etcd.WithPrefix()), // to compute num children
+		etcd.OpGet("/zk/ctime/"+p, etcd.WithSerializable()),
+		etcd.OpGet("/zk/mtime/"+p, etcd.WithSerializable(),
+			etcd.WithSort(etcd.SortByModRevision, etcd.SortDescend)),
+		etcd.OpGet("/zk/key/"+p, etcd.WithSerializable()),
+		etcd.OpGet("/zk/ver/"+p, etcd.WithSerializable()),
+		etcd.OpGet("/zk/cver/"+p, etcd.WithSerializable()),
+		etcd.OpGet("/zk/aver/"+p, etcd.WithSerializable()),
+		// to compute num children
+		etcd.OpGet(getListPfx(p), etcd.WithSerializable(), etcd.WithPrefix()),
 	}
 }
 
