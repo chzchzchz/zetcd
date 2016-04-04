@@ -11,18 +11,22 @@ import (
 	"github.com/samuel/go-zookeeper/zk"
 )
 
+var (
+	acl = zk.WorldACL(zk.PermAll)
+)
+
 func TestCreateGet(t *testing.T) {
 	runTest(t, func(t *testing.T, c *zk.Conn) {
 		if _, _, err := c.Get("/abc"); err == nil {
 			t.Fatalf("expected error on getting absent /abc")
 		}
-		if _, err := c.Create("/foo/bar", []byte("x"), 0, nil); err == nil {
+		if _, err := c.Create("/foo/bar", []byte("x"), 0, acl); err == nil {
 			t.Fatalf("expected error on creating /foo/bar without /foo")
 		}
-		if _, err := c.Create("/abc", []byte("data1"), 0, nil); err != nil {
+		if _, err := c.Create("/abc", []byte("data1"), 0, acl); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := c.Create("/abc", []byte("data1"), 0, nil); err == nil {
+		if _, err := c.Create("/abc", []byte("data1"), 0, acl); err == nil {
 			t.Fatalf("don't allow double create")
 		}
 		if _, _, err := c.Get("/abc"); err != nil {
@@ -31,7 +35,7 @@ func TestCreateGet(t *testing.T) {
 		if _, _, err := c.Get("/abc/def"); err == nil {
 			t.Fatalf("expected error on getting /abc/def")
 		}
-		if _, err := c.Create("/abc/def", []byte("data2"), 0, nil); err != nil {
+		if _, err := c.Create("/abc/def", []byte("data2"), 0, acl); err != nil {
 			t.Fatal(err)
 		}
 		if _, _, err := c.Get("/abc/def"); err != nil {
@@ -42,7 +46,7 @@ func TestCreateGet(t *testing.T) {
 
 func TestGetDataW(t *testing.T) {
 	runTest(t, func(t *testing.T, c *zk.Conn) {
-		if _, err := c.Create("/abc", []byte("data1"), 0, nil); err != nil {
+		if _, err := c.Create("/abc", []byte("data1"), 0, acl); err != nil {
 			t.Fatal(err)
 		}
 		_, _, ch, werr := c.GetW("/abc")
@@ -67,7 +71,7 @@ func TestGetDataW(t *testing.T) {
 
 func TestSync(t *testing.T) {
 	runTest(t, func(t *testing.T, c *zk.Conn) {
-		if _, err := c.Create("/abc", []byte(""), 0, nil); err != nil {
+		if _, err := c.Create("/abc", []byte(""), 0, acl); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := c.Sync("/abc"); err != nil {
@@ -78,7 +82,7 @@ func TestSync(t *testing.T) {
 
 func TestExists(t *testing.T) {
 	runTest(t, func(t *testing.T, c *zk.Conn) {
-		if _, err := c.Create("/abc", []byte(""), 0, nil); err != nil {
+		if _, err := c.Create("/abc", []byte(""), 0, acl); err != nil {
 			t.Fatal(err)
 		}
 		if ok, _, err := c.Exists("/abc"); err != nil || !ok {
@@ -97,7 +101,7 @@ func TestExistsW(t *testing.T) {
 		if ok || err != nil {
 			t.Fatal(err)
 		}
-		if _, err := c.Create("/abc", []byte(""), 0, nil); err != nil {
+		if _, err := c.Create("/abc", []byte(""), 0, acl); err != nil {
 			t.Fatal(err)
 		}
 		select {
@@ -140,13 +144,13 @@ func TestExistsW(t *testing.T) {
 
 func TestChildren(t *testing.T) {
 	runTest(t, func(t *testing.T, c *zk.Conn) {
-		if _, err := c.Create("/abc", []byte(""), 0, nil); err != nil {
+		if _, err := c.Create("/abc", []byte(""), 0, acl); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := c.Create("/abc/def", []byte(""), 0, nil); err != nil {
+		if _, err := c.Create("/abc/def", []byte(""), 0, acl); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := c.Create("/abc/123", []byte(""), 0, nil); err != nil {
+		if _, err := c.Create("/abc/123", []byte(""), 0, acl); err != nil {
 			t.Fatal(err)
 		}
 		children, _, err := c.Children("/")
@@ -168,7 +172,7 @@ func TestChildren(t *testing.T) {
 
 func TestGetChildrenW(t *testing.T) {
 	runTest(t, func(t *testing.T, c *zk.Conn) {
-		if _, err := c.Create("/abc", []byte(""), 0, nil); err != nil {
+		if _, err := c.Create("/abc", []byte(""), 0, acl); err != nil {
 			t.Fatal(err)
 		}
 
@@ -182,7 +186,7 @@ func TestGetChildrenW(t *testing.T) {
 			t.Fatalf("should block")
 		case <-time.After(10 * time.Millisecond):
 		}
-		if _, err := c.Create("/abc/def", []byte(""), 0, nil); err != nil {
+		if _, err := c.Create("/abc/def", []byte(""), 0, acl); err != nil {
 			t.Fatal(err)
 		}
 		select {
@@ -201,13 +205,26 @@ func TestGetChildrenW(t *testing.T) {
 			t.Fatalf("should block")
 		case <-time.After(10 * time.Millisecond):
 		}
-		if _, err := c.Create("/abc/123", []byte(""), 0, nil); err != nil {
+		if _, err := c.Create("/abc/123", []byte(""), 0, acl); err != nil {
 			t.Fatal(err)
 		}
 		select {
 		case <-ch:
 		case <-time.After(time.Second):
 			t.Fatalf("waited to long for new child")
+		}
+	})
+}
+
+func TestCreateInvalidACL(t *testing.T) {
+	runTest(t, func(t *testing.T, c *zk.Conn) {
+		werr := ErrInvalidACL
+		resp, err := c.Create("/foo", []byte("x"), 0, nil)
+		if err == nil {
+			t.Fatalf("created with invalid acl %v, wanted %v", resp, werr)
+		}
+		if err.Error() != werr.Error() {
+			t.Fatalf("got err %v, wanted %v", err, werr)
 		}
 	})
 }

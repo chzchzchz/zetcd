@@ -37,6 +37,9 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 	pkey := "/zk/cver/" + pp
 
 	applyf := func(s v3sync.STM) error {
+		if len(op.Acl) == 0 {
+			return ErrInvalidACL
+		}
 		if s.Rev(pkey) == 0 && len(pp) != 2 {
 			// no parent
 			return ErrNoNode
@@ -57,30 +60,33 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 		s.Put("/zk/ver/"+p, encodeInt64(0), opts...)
 		s.Put("/zk/cver/"+p, encodeInt64(0), opts...)
 		s.Put("/zk/aver/"+p, encodeInt64(0), opts...)
-		if len(op.Acl) != 0 {
-			s.Put("/zk/acl/"+p, encodeACLs(op.Acl), opts...)
-		}
+		s.Put("/zk/acl/"+p, encodeACLs(op.Acl), opts...)
 
 		return nil
 	}
 
 	resp, err := v3sync.NewSTMSerializable(z.s.c.Ctx(), z.s.c, applyf)
+	errResp := errOk
 	// XXX do I need valid zxid on errors?
 	switch err {
 	case ErrNoNode:
 		// parent missing
-		errResp := ErrCode(errNoNode)
-		z.s.Send(xid, 0, &errResp)
-		return nil
+		errResp = errNoNode
 	case ErrNodeExists:
 		// this key already exists
-		errResp := ErrCode(errNodeExists)
-		z.s.Send(xid, 0, &errResp)
-		return nil
+		errResp = errNodeExists
+	case ErrInvalidACL:
+		errResp = errInvalidAcl
 	case nil:
 	default:
 		return err
 	}
+
+	if errResp != errOk {
+		z.s.Send(xid, 0, &errResp)
+		return nil
+	}
+
 	xzid := ZXid(resp.Header.Revision)
 	z.s.w.wait(xzid, p, EventNodeCreated)
 	z.s.Send(xid, xzid, &CreateResponse{op.Path})
