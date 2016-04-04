@@ -1,6 +1,7 @@
 package zetcd
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"testing"
@@ -43,8 +44,25 @@ func benchConnGet(b *testing.B, addr string) {
 	}
 }
 
+func benchCreateSet(b *testing.B, addr string) {
+	c, _, err := zk.Connect([]string{addr}, time.Second)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer c.Close()
+	for i := 0; i < b.N; i++ {
+		s := fmt.Sprintf("/%d", i)
+		v := fmt.Sprintf("%v", time.Now())
+		c.Create(s, []byte(v), 0, acl)
+		c.Set("/", []byte(v), -1)
+	}
+}
+
 func BenchmarkZetcdGet(b *testing.B) { benchGet(b, zetcdAddr) }
 func BenchmarkZKGet(b *testing.B)    { benchGet(b, zkAddr) }
 
 func BenchmarkZetcdConnGet(b *testing.B) { benchConnGet(b, zetcdAddr) }
 func BenchmarkZKConnGet(b *testing.B)    { benchConnGet(b, zkAddr) }
+
+func BenchmarkZetcdCreateSet(b *testing.B) { benchCreateSet(b, zetcdAddr) }
+func BenchmarkZKCreateSet(b *testing.B)    { benchCreateSet(b, zkAddr) }
