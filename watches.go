@@ -76,7 +76,9 @@ func (ws *watches) runWatch(w *watch, cb func(ZXid)) {
 		close(w.donec)
 		<-w.wch
 		ws.mu.Lock()
-		delete(ws.xid2watch, w.xid)
+		if ws.xid2watch != nil {
+			delete(ws.xid2watch, w.xid)
+		}
 		ws.mu.Unlock()
 	}()
 	for {
@@ -123,7 +125,6 @@ func (ws *watches) close() {
 	for _, w := range ws.xid2watch {
 		for range w.wch {
 		}
-		close(w.donec)
 	}
 	ws.xid2watch = nil
 }

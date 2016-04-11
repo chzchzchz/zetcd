@@ -1,6 +1,7 @@
 package zetcd
 
 import (
+	"fmt"
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
@@ -119,7 +120,7 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 		f := func(newzxid ZXid) {
 			wresp := &WatcherEvent{
 				Type:  EventNodeChildrenChanged,
-				State: StateConnected,
+				State: StateSyncConnected,
 				Path:  op.Path,
 			}
 			z.s.Send(xid, newzxid, wresp)
@@ -213,7 +214,7 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
 		f := func(newzxid ZXid) {
 			wresp := &WatcherEvent{
 				Type:  ev,
-				State: StateConnected,
+				State: StateSyncConnected,
 				Path:  op.Path,
 			}
 			z.s.Send(xid, newzxid, wresp)
@@ -251,7 +252,7 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 		f := func(newzxid ZXid) {
 			wresp := &WatcherEvent{
 				Type:  EventNodeDataChanged,
-				State: StateConnected,
+				State: StateSyncConnected,
 				Path:  op.Path,
 			}
 			z.s.Send(xid, newzxid, wresp)
@@ -372,7 +373,71 @@ func (z *zkEtcd) Close(xid Xid, op *CloseRequest) error {
 
 func (z *zkEtcd) SetAuth(xid Xid, op *SetAuthRequest) error { panic("setAuth") }
 
-func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error { panic("setWatches") }
+func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
+	for _, dw := range op.DataWatches {
+		dataPath := dw
+		p := mkPath(dataPath)
+		f := func(newzxid ZXid) {
+			wresp := &WatcherEvent{
+				Type:  EventNodeDataChanged,
+				State: StateSyncConnected,
+				Path:  dataPath,
+			}
+			fmt.Println("sending data change", newzxid, dataPath)
+			z.s.Send(xid, newzxid, wresp)
+		}
+		z.s.w.watch(op.RelativeZxid, xid, p, EventNodeDataChanged, f)
+	}
+
+	ops := make([]etcd.Op, len(op.ExistWatches))
+	for i, ew := range op.ExistWatches {
+		ops[i] = etcd.OpGet(
+			"/zk/ver/ctime/"+mkPath(ew),
+			etcd.WithSerializable(),
+			etcd.WithRev(int64(op.RelativeZxid)))
+	}
+
+	resp, err := z.s.c.Txn(z.s.c.Ctx()).Then(ops...).Commit()
+	if err != nil {
+		return err
+	}
+	curZXid := ZXid(resp.Header.Revision)
+
+	for i, ew := range op.ExistWatches {
+		existPath := ew
+		p := mkPath(existPath)
+
+		ev := EventNodeDeleted
+		if len(resp.Responses[i].GetResponseRange().Kvs) == 0 {
+			ev = EventNodeCreated
+		}
+		f := func(newzxid ZXid) {
+			wresp := &WatcherEvent{
+				Type:  ev,
+				State: StateSyncConnected,
+				Path:  existPath,
+			}
+			z.s.Send(xid, newzxid, wresp)
+		}
+		z.s.w.watch(op.RelativeZxid, xid, p, ev, f)
+	}
+	for _, cw := range op.ChildWatches {
+		childPath := cw
+		p := mkPath(childPath)
+		f := func(newzxid ZXid) {
+			wresp := &WatcherEvent{
+				Type:  EventNodeChildrenChanged,
+				State: StateSyncConnected,
+				Path:  childPath,
+			}
+			z.s.Send(xid, newzxid, wresp)
+		}
+		z.s.w.watch(op.RelativeZxid, xid, p, EventNodeChildrenChanged, f)
+	}
+
+	swresp := &SetWatchesResponse{}
+	return z.s.Send(xid, curZXid, swresp)
+}
 
 func encodeACLs(acls []ACL) string {
 	var b bytes.Buffer

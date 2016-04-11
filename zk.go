@@ -43,6 +43,8 @@ func DispatchZK(zk ZK, xid Xid, op interface{}) error {
 		return zk.Sync(xid, op)
 	case *CloseRequest:
 		return zk.Close(xid, op)
+	case *SetWatchesRequest:
+		return zk.SetWatches(xid, op)
 	default:
 		fmt.Printf("unexpected type %d %T\n", xid, op)
 	}
