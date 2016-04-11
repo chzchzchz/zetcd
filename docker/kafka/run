@@ -1,0 +1,5 @@
+#!/bin/bash
+
+docker build -t `whoami`/kafka:0.8.2.1 .
+docker run  -p 127.0.0.1:9092:9092 `whoami`/kafka:0.8.2.1 . start
+
