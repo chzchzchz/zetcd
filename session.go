@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"sync"
 
 	etcd "github.com/coreos/etcd/clientv3"
 	"golang.org/x/net/context"
@@ -18,6 +19,7 @@ type Session struct {
 	id        int64
 	zkc       net.Conn
 	outc      chan []byte
+	muOut     sync.RWMutex
 	c         *etcd.Client
 	leaseZXid ZXid
 	w         *watches
@@ -47,7 +49,10 @@ func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
 	go func() {
 		defer func() {
 			cancel()
+			s.muOut.Lock()
 			close(s.outc)
+			s.outc = nil
+			s.muOut.Unlock()
 		}()
 		for {
 			select {
@@ -104,6 +109,8 @@ func (s *Session) Send(xid Xid, zxid ZXid, resp interface{}) error {
 	}
 
 	binary.BigEndian.PutUint32(buf[:4], uint32(pktlen))
+	s.muOut.RLock()
+	defer s.muOut.RUnlock()
 	select {
 	case s.outc <- buf[:4+pktlen]:
 	case <-s.c.Ctx().Done():
