@@ -27,6 +27,8 @@ func DispatchZK(zk ZK, xid Xid, op interface{}) error {
 		return zk.Create(xid, op)
 	case *DeleteRequest:
 		return zk.Delete(xid, op)
+	case *GetChildrenRequest:
+		return zk.GetChildren(xid, op)
 	case *GetChildren2Request:
 		return zk.GetChildren2(xid, op)
 	case *PingRequest:
