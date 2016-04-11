@@ -134,7 +134,7 @@ func (sp *SessionPool) Auth(zk net.Conn) (*Session, error) {
 		panic("unhandled req stuff!")
 	}
 
-	lcr, err := sp.c.Create(sp.c.Ctx(), int64(req.TimeOut)*1000)
+	lcr, err := sp.c.Grant(sp.c.Ctx(), int64(req.TimeOut)*1000)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,6 @@ func (sp *SessionPool) Auth(zk net.Conn) (*Session, error) {
 		return nil, err
 	}
 
-	// TODO: the session id should be a lease id
 	resp := &ConnectResponse{
 		ProtocolVersion: 0,
 		TimeOut:         int32(lcr.TTL * 1000),
