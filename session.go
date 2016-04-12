@@ -31,10 +31,11 @@ type Session struct {
 }
 
 func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
+	outc := make(chan []byte, 16)
 	s := &Session{
 		id:    id,
 		zkc:   zk,
-		outc:  make(chan []byte, 16),
+		outc:  outc,
 		c:     c,
 		stopc: make(chan struct{}),
 		donec: make(chan struct{}),
@@ -72,7 +73,7 @@ func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
 
 	go func() {
 		defer close(s.donec)
-		for msg := range s.outc {
+		for msg := range outc {
 			if _, err := s.zkc.Write(msg); err != nil {
 				return
 			}
