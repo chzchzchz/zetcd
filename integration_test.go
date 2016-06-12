@@ -253,7 +253,7 @@ func serve(c *etcd.Client) (<-chan struct{}, func()) {
 		os.Exit(-1)
 	}
 	go func() {
-		Serve(c, ln)
+		Serve(c.Ctx(), ln, NewAuth(c))
 		close(ch)
 	}()
 	return ch, func() { ln.Close() }

@@ -25,5 +25,5 @@ func main() {
 	if err != nil {
 		os.Exit(-1)
 	}
-	zetcd.Serve(c, ln)
+	zetcd.Serve(c.Ctx(), ln, zetcd.NewAuth(c))
 }

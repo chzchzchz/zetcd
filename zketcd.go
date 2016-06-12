@@ -21,6 +21,11 @@ func NewZKEtcd(s *Session) ZK {
 	return &zkEtcd{s}
 }
 
+func (z *zkEtcd) CloseZK() error {
+	z.s.Close()
+	return nil
+}
+
 func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 	glog.V(7).Infof("Create(%v,%+v)", xid, *op)
 

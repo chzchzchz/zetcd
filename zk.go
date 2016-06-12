@@ -19,6 +19,9 @@ type ZK interface {
 	Close(xid Xid, op *CloseRequest) error
 	SetAuth(xid Xid, op *SetAuthRequest) error
 	SetWatches(xid Xid, op *SetWatchesRequest) error
+
+	// close all resources for this zk
+	CloseZK() error
 }
 
 func DispatchZK(zk ZK, xid Xid, op interface{}) error {
