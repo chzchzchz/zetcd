@@ -19,7 +19,8 @@ RUN tar xfz /tmp/kafka_"$SCALA_VERSION"-"$KAFKA_VERSION".tgz -C /opt
 RUN rm /tmp/kafka_"$SCALA_VERSION"-"$KAFKA_VERSION".tgz
 
 ENV AUTO_CREATE_TOPICS true
-# 9092 is kafka
+ENV BROKER_ID 1
+# 9092 is kafka port
 EXPOSE 9092
 
 ENV ZK_HOST 172.20.0.1:2181

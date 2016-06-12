@@ -43,5 +43,12 @@ if [ ! -z "$AUTO_CREATE_TOPICS" ]; then
     echo "auto.create.topics.enable=$AUTO_CREATE_TOPICS" >> $KAFKA_HOME/config/server.properties
 fi
 
+if [ ! -z "$BROKER_ID" ]; then
+    echo "broker.id: $BROKER_ID"
+    sed -r -i "s/(broker.id)=(.*)/\1=$BROKER_ID/g" $KAFKA_HOME/config/server.properties
+    echo "log.dir: /tmp/kafka-logs-$BROKER_ID"
+    sed -r -i "s|(log.dir)=(.*)|\1=/tmp/kafka-logs-$BROKER_ID|g" $KAFKA_HOME/config/server.properties
+fi
+
 # Run Kafka
 $KAFKA_HOME/bin/kafka-server-start.sh $KAFKA_HOME/config/server.properties
