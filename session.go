@@ -13,16 +13,19 @@ import (
 type SessionPool struct {
 	sessions map[etcd.LeaseID]*Session
 	c        *etcd.Client
+	mu       sync.RWMutex
 }
 
 type Session struct {
-	id        etcd.LeaseID
-	zkc       net.Conn
-	outc      chan []byte
-	muOut     sync.RWMutex
-	c         *etcd.Client
+	id    etcd.LeaseID
+	zkc   net.Conn
+	outc  chan []byte
+	muOut sync.RWMutex
+	c     *etcd.Client
+	w     *watches
+
 	leaseZXid ZXid
-	w         *watches
+	mu        sync.RWMutex
 
 	// stopc is closed to shutdown session
 	stopc chan struct{}
@@ -64,7 +67,9 @@ func NewSession(c *etcd.Client, zk net.Conn, id etcd.LeaseID) (*Session, error) 
 				if ka.ResponseHeader == nil {
 					continue
 				}
+				s.mu.Lock()
 				s.leaseZXid = ZXid(ka.ResponseHeader.Revision)
+				s.mu.Unlock()
 			case <-s.stopc:
 				return
 			}
@@ -126,6 +131,14 @@ func (s *Session) Close() {
 	<-s.donec
 }
 
+// ZXid gets the lease ZXid
+func (s *Session) ZXid() ZXid {
+	s.mu.RLock()
+	zxid := s.leaseZXid
+	s.mu.RUnlock()
+	return zxid
+}
+
 func NewSessionPool(client *etcd.Client) *SessionPool {
 	return &SessionPool{
 		sessions: make(map[etcd.LeaseID]*Session),
@@ -165,6 +178,8 @@ func (sp *SessionPool) Auth(zk net.Conn) (*Session, error) {
 	if serr != nil {
 		return nil, serr
 	}
+	sp.mu.Lock()
 	sp.sessions[s.id] = s
+	sp.mu.Unlock()
 	return s, nil
 }
