@@ -1,4 +1,7 @@
 # zetcd
+
+[![Build Status](https://travis-ci.org/chzchzchz/zetcd.svg?branch=master)](https://travis-ci.org/chzchzchz/zetcd)
+
 A ZooKeeper "personality" for etcd.
 Point a ZooKeeper client at zetcd and request forwarded to the etcd cluster for best results.
 
