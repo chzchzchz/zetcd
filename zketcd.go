@@ -89,9 +89,12 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 		return z.s.Send(xid, 0, &errResp)
 	}
 
-	xzid := ZXid(resp.Header.Revision)
-	z.s.w.wait(xzid, p, EventNodeCreated)
-	return z.s.Send(xid, xzid, &CreateResponse{op.Path})
+	zxid := ZXid(resp.Header.Revision)
+	z.s.w.wait(zxid, p, EventNodeCreated)
+	crResp := &CreateResponse{op.Path}
+
+	glog.V(7).Infof("Create(%v) = (zxid=%v, resp=%+v)", zxid, xid, *crResp)
+	return z.s.Send(xid, zxid, crResp)
 }
 
 func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
@@ -133,6 +136,7 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 		z.s.w.watch(zxid, xid, p, EventNodeChildrenChanged, f)
 	}
 
+	glog.V(7).Infof("GetChildren2(%v) = (zxid=%v, resp=%+v)", zxid, xid, *resp)
 	return z.s.Send(xid, zxid, resp)
 }
 
@@ -198,6 +202,8 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 	delResp := &DeleteResponse{}
 	zxid := ZXid(resp.Header.Revision)
 	z.s.w.wait(zxid, p, EventNodeDeleted)
+
+	glog.V(7).Infof("Delete(%v) = (zxid=%v, resp=%+v)", xid, zxid, *delResp)
 	return z.s.Send(xid, zxid, delResp)
 }
 
@@ -238,6 +244,7 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
 		return z.s.Send(xid, 0, &errResp)
 	}
 
+	glog.V(7).Infof("Exists(%v) = (zxid=%v, resp=%+v)", xid, zxid, *exResp)
 	return z.s.Send(xid, zxid, exResp)
 }
 
@@ -274,6 +281,8 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 		z.s.w.watch(zxid, xid, p, EventNodeDataChanged, f)
 	}
 	datResp.Data = []byte(txnresp.Responses[2].GetResponseRange().Kvs[0].Value)
+
+	glog.V(7).Infof("GetData(%v) = (zxid=%v, resp=%+v)", xid, zxid, *datResp)
 	return z.s.Send(xid, zxid, datResp)
 }
 
@@ -318,7 +327,10 @@ func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) error {
 
 	sdresp := &SetDataResponse{}
 	sdresp.Stat = statTxn(&statResp)
-	return z.s.Send(xid, ZXid(resp.Header.Revision), sdresp)
+	zxid := ZXid(resp.Header.Revision)
+
+	glog.V(7).Infof("SetData(%v) = (zxid=%v, resp=%+v)", xid, zxid, *sdresp)
+	return z.s.Send(xid, zxid, sdresp)
 }
 
 func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) error {
@@ -341,7 +353,10 @@ func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) error {
 		return z.s.Send(xid, 0, &errResp)
 	}
 	resp.Acl = decodeACLs(resps[0].GetResponseRange().Kvs[0].Value)
-	return z.s.Send(xid, ZXid(txnresp.Header.Revision), resp)
+	zxid := ZXid(txnresp.Header.Revision)
+
+	glog.V(7).Infof("GetAcl(%v) = (zxid=%v, resp=%+v)", xid, zxid, *resp)
+	return z.s.Send(xid, zxid, resp)
 }
 
 func (z *zkEtcd) SetAcl(xid Xid, op *SetAclRequest) error { panic("setAcl") }
@@ -367,8 +382,10 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
 		zkkey := strings.Replace(string(kv.Key), getListPfx(p), "", 1)
 		resp.Children = append(resp.Children, zkkey)
 	}
+	zxid := ZXid(children.Header.Revision)
 
-	return z.s.Send(xid, ZXid(children.Header.Revision), resp)
+	glog.V(7).Infof("GetChildren(%v) = (zxid=%v, resp=%+v)", xid, zxid, *resp)
+	return z.s.Send(xid, zxid, resp)
 }
 
 func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error {
@@ -383,7 +400,10 @@ func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error {
 		errResp := ErrCode(errNoNode)
 		return z.s.Send(xid, 0, &errResp)
 	}
-	return z.s.Send(xid, ZXid(resp.Header.Revision), &CreateResponse{op.Path})
+
+	zxid := ZXid(resp.Header.Revision)
+	glog.V(7).Infof("Sync(%v) = (zxid=%v, resp=%+v)", xid, zxid, *resp)
+	return z.s.Send(xid, zxid, &CreateResponse{op.Path})
 }
 
 func (z *zkEtcd) Multi(xid Xid, op *MultiRequest) error { panic("multi") }
@@ -464,6 +484,8 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
 	}
 
 	swresp := &SetWatchesResponse{}
+
+	glog.V(7).Infof("SetWatches(%v) = (zxid=%v, resp=%+v)", xid, curZXid, *swresp)
 	return z.s.Send(xid, curZXid, swresp)
 }
 
