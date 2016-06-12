@@ -5,6 +5,7 @@ import (
 	"net"
 
 	etcd "github.com/coreos/etcd/clientv3"
+	"github.com/golang/glog"
 )
 
 func handle(sp *SessionPool, c *etcd.Client, zk net.Conn) {
@@ -32,7 +33,7 @@ func Serve(c *etcd.Client, ln net.Listener) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			fmt.Printf("oops %v\n", err)
+			glog.V(5).Infof("Accept()=%v", err)
 		} else {
 			go handle(sp, c, conn)
 		}

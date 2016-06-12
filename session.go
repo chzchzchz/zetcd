@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	etcd "github.com/coreos/etcd/clientv3"
+	"github.com/golang/glog"
 	"golang.org/x/net/context"
 )
 
@@ -148,7 +149,7 @@ func NewSessionPool(client *etcd.Client) *SessionPool {
 func (sp *SessionPool) Auth(zk net.Conn) (*Session, error) {
 	req := ConnectRequest{}
 	ReadPacket(zk, req)
-	fmt.Printf("%+v\n", req)
+	glog.V(6).Infof("auth(%+v)", req)
 
 	if req.ProtocolVersion != 0 ||
 		req.SessionID != 0 {

@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
-	"fmt"
 	"path"
 	"strings"
 	"time"
 
 	etcd "github.com/coreos/etcd/clientv3"
 	v3sync "github.com/coreos/etcd/clientv3/concurrency"
+	"github.com/golang/glog"
 )
 
 type zkEtcd struct {
@@ -22,6 +22,8 @@ func NewZKEtcd(s *Session) ZK {
 }
 
 func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
+	glog.V(7).Infof("Create(%v,%+v)", xid, *op)
+
 	opts := []etcd.OpOption{}
 	switch op.Flags {
 	case 0:
@@ -93,6 +95,8 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 }
 
 func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
+	glog.V(7).Infof("GetChildren2(%v,%+v)", xid, *op)
+
 	resp := &GetChildren2Response{}
 	p := mkPath(op.Path)
 
@@ -123,6 +127,7 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 				State: StateSyncConnected,
 				Path:  op.Path,
 			}
+			glog.V(7).Infof("WatchChild (%v,%v,%+v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
 		z.s.w.watch(zxid, xid, p, EventNodeChildrenChanged, f)
@@ -132,10 +137,13 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 }
 
 func (z *zkEtcd) Ping(xid Xid, op *PingRequest) error {
+	glog.V(7).Infof("Ping(%v,%+v)", xid, *op)
 	return z.s.Send(xid, z.s.ZXid(), &PingResponse{})
 }
 
 func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
+	glog.V(7).Infof("Delete(%v,%+v)", xid, *op)
+
 	p := mkPath(op.Path)
 	pp := mkPath(path.Dir(op.Path))
 	key := "/zk/key/" + p
@@ -194,6 +202,8 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 }
 
 func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
+	glog.V(7).Infof("Exists(%v,%+v)", xid, *op)
+
 	p := mkPath(op.Path)
 	gets := statGets(p)
 	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(gets...).Commit()
@@ -217,6 +227,7 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
 				State: StateSyncConnected,
 				Path:  op.Path,
 			}
+			glog.V(7).Infof("WatchExists (%v,%v,%+v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
 		z.s.w.watch(zxid, xid, p, ev, f)
@@ -231,6 +242,8 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
 }
 
 func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
+	glog.V(7).Infof("GetData(%v,%+v)", xid, *op)
+
 	p := mkPath(op.Path)
 	gets := statGets(p)
 	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(gets...).Commit()
@@ -255,6 +268,7 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 				State: StateSyncConnected,
 				Path:  op.Path,
 			}
+			glog.V(7).Infof("WatchData (%v,%v,%+v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
 		z.s.w.watch(zxid, xid, p, EventNodeDataChanged, f)
@@ -264,6 +278,8 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 }
 
 func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) error {
+	glog.V(7).Infof("SetData(%v,%+v)", xid, *op)
+
 	p := mkPath(op.Path)
 	var statResp etcd.TxnResponse
 	applyf := func(s v3sync.STM) error {
@@ -306,6 +322,8 @@ func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) error {
 }
 
 func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) error {
+	glog.V(7).Infof("GetAcl(%v,%+v)", xid, *op)
+
 	resp := &GetAclResponse{}
 	p := mkPath(op.Path)
 
@@ -329,6 +347,8 @@ func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) error {
 func (z *zkEtcd) SetAcl(xid Xid, op *SetAclRequest) error { panic("setAcl") }
 
 func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
+	glog.V(7).Infof("GetChildren(%v,%+v)", xid, *op)
+
 	p := mkPath(op.Path)
 	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(statGets(p)...).Commit()
 	if err != nil {
@@ -352,6 +372,8 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
 }
 
 func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error {
+	glog.V(7).Infof("Sync(%v,%+v)", xid, *op)
+
 	// linearized read
 	resp, err := z.s.c.Get(z.s.c.Ctx(), "/zk/ver/"+mkPath(op.Path))
 	if err != nil {
@@ -367,6 +389,8 @@ func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error {
 func (z *zkEtcd) Multi(xid Xid, op *MultiRequest) error { panic("multi") }
 
 func (z *zkEtcd) Close(xid Xid, op *CloseRequest) error {
+	glog.V(7).Infof("Close(%v,%+v)", xid, *op)
+
 	z.s.Send(xid, 0, &CloseResponse{})
 	return ErrConnectionClosed
 }
@@ -374,6 +398,8 @@ func (z *zkEtcd) Close(xid Xid, op *CloseRequest) error {
 func (z *zkEtcd) SetAuth(xid Xid, op *SetAuthRequest) error { panic("setAuth") }
 
 func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
+	glog.V(7).Infof("SetWatches(%v,%+v)", xid, *op)
+
 	for _, dw := range op.DataWatches {
 		dataPath := dw
 		p := mkPath(dataPath)
@@ -383,7 +409,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
 				State: StateSyncConnected,
 				Path:  dataPath,
 			}
-			fmt.Println("sending data change", newzxid, dataPath)
+			glog.V(7).Infof("WatchData* (%v,%v,%v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
 		z.s.w.watch(op.RelativeZxid, xid, p, EventNodeDataChanged, f)
@@ -417,6 +443,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
 				State: StateSyncConnected,
 				Path:  existPath,
 			}
+			glog.V(7).Infof("WatchExist* (%v,%v,%v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
 		z.s.w.watch(op.RelativeZxid, xid, p, ev, f)
@@ -430,6 +457,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
 				State: StateSyncConnected,
 				Path:  childPath,
 			}
+			glog.V(7).Infof("WatchChild* (%v,%v,%v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
 		z.s.w.watch(op.RelativeZxid, xid, p, EventNodeChildrenChanged, f)
