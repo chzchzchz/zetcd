@@ -11,12 +11,12 @@ import (
 )
 
 type SessionPool struct {
-	sessions map[int64]*Session
+	sessions map[etcd.LeaseID]*Session
 	c        *etcd.Client
 }
 
 type Session struct {
-	id        int64
+	id        etcd.LeaseID
 	zkc       net.Conn
 	outc      chan []byte
 	muOut     sync.RWMutex
@@ -30,7 +30,7 @@ type Session struct {
 	donec chan struct{}
 }
 
-func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
+func NewSession(c *etcd.Client, zk net.Conn, id etcd.LeaseID) (*Session, error) {
 	outc := make(chan []byte, 16)
 	s := &Session{
 		id:    id,
@@ -43,7 +43,7 @@ func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
 	s.w = newWatches(s)
 
 	ctx, cancel := context.WithCancel(c.Ctx())
-	kach, kaerr := c.KeepAlive(ctx, etcd.LeaseID(id))
+	kach, kaerr := c.KeepAlive(ctx, id)
 	if kaerr != nil {
 		return nil, kaerr
 	}
@@ -61,10 +61,10 @@ func NewSession(c *etcd.Client, zk net.Conn, id int64) (*Session, error) {
 				if !ok {
 					return
 				}
-				if ka.Header == nil {
+				if ka.ResponseHeader == nil {
 					continue
 				}
-				s.leaseZXid = ZXid(ka.Header.Revision)
+				s.leaseZXid = ZXid(ka.ResponseHeader.Revision)
 			case <-s.stopc:
 				return
 			}
@@ -128,7 +128,7 @@ func (s *Session) Close() {
 
 func NewSessionPool(client *etcd.Client) *SessionPool {
 	return &SessionPool{
-		sessions: make(map[int64]*Session),
+		sessions: make(map[etcd.LeaseID]*Session),
 		c:        client}
 }
 

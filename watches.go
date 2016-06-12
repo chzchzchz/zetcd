@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	etcd "github.com/coreos/etcd/clientv3"
-	storagepb "github.com/coreos/etcd/storage/storagepb"
 	"golang.org/x/net/context"
 )
 
@@ -90,7 +89,7 @@ func (ws *watches) runWatch(w *watch, cb func(ZXid)) {
 			if w.evtype == EventNodeDeleted {
 				isDel := false
 				for _, ev := range resp.Events {
-					if ev.Type == storagepb.DELETE {
+					if ev.Type == etcd.EventTypeDelete {
 						isDel = true
 						break
 					}
