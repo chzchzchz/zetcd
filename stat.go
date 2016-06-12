@@ -10,7 +10,6 @@ func statGets(p string) []etcd.Op {
 		etcd.OpGet("/zk/mtime/"+p, etcd.WithSerializable(),
 			etcd.WithSort(etcd.SortByModRevision, etcd.SortDescend)),
 		etcd.OpGet("/zk/key/"+p, etcd.WithSerializable()),
-		etcd.OpGet("/zk/ver/"+p, etcd.WithSerializable()),
 		etcd.OpGet("/zk/cver/"+p, etcd.WithSerializable()),
 		etcd.OpGet("/zk/aver/"+p, etcd.WithSerializable()),
 		// to compute num children
@@ -22,10 +21,9 @@ func statTxn(txnresp *etcd.TxnResponse) (s Stat) {
 	ctime := txnresp.Responses[0].GetResponseRange()
 	mtime := txnresp.Responses[1].GetResponseRange()
 	node := txnresp.Responses[2].GetResponseRange()
-	ver := txnresp.Responses[3].GetResponseRange()
-	cver := txnresp.Responses[4].GetResponseRange()
-	aver := txnresp.Responses[5].GetResponseRange()
-	children := txnresp.Responses[6].GetResponseRange()
+	cver := txnresp.Responses[3].GetResponseRange()
+	aver := txnresp.Responses[4].GetResponseRange()
+	children := txnresp.Responses[5].GetResponseRange()
 
 	// XXX hack: need to format zk / node instead of this garbage
 	if len(ctime.Kvs) != 0 {
@@ -35,9 +33,7 @@ func statTxn(txnresp *etcd.TxnResponse) (s Stat) {
 	if len(mtime.Kvs) != 0 {
 		s.Mzxid = ZXid(mtime.Kvs[0].ModRevision)
 		s.Mtime = decodeInt64(mtime.Kvs[0].Value)
-	}
-	if len(ver.Kvs) != 0 {
-		s.Version = Ver(decodeInt64(ver.Kvs[0].Value))
+		s.Version = Ver(mtime.Kvs[0].Version)
 	}
 	if len(cver.Kvs) != 0 {
 		s.Cversion = Ver(decodeInt64(cver.Kvs[0].Value))

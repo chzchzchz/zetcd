@@ -119,7 +119,7 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 		return z.s.Send(xid, ZXid(txnresp.Header.Revision), &errResp)
 	}
 
-	children := txnresp.Responses[6].GetResponseRange()
+	children := txnresp.Responses[5].GetResponseRange()
 	for _, kv := range children.Kvs {
 		zkkey := strings.Replace(string(kv.Key), getListPfx(p), "", 1)
 		resp.Children = append(resp.Children, zkkey)
@@ -381,7 +381,7 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
 		return z.s.Send(xid, ZXid(txnresp.Header.Revision), &errResp)
 	}
 
-	children := txnresp.Responses[6].GetResponseRange()
+	children := txnresp.Responses[5].GetResponseRange()
 	resp := &GetChildrenResponse{}
 	for _, kv := range children.Kvs {
 		zkkey := strings.Replace(string(kv.Key), getListPfx(p), "", 1)
