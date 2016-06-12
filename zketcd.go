@@ -1,10 +1,10 @@
 package zetcd
 
 import (
-	"fmt"
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
+	"fmt"
 	"path"
 	"strings"
 	"time"
@@ -132,7 +132,7 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 }
 
 func (z *zkEtcd) Ping(xid Xid, op *PingRequest) error {
-	return z.s.Send(xid, z.s.leaseZXid, &PingResponse{})
+	return z.s.Send(xid, z.s.ZXid(), &PingResponse{})
 }
 
 func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
