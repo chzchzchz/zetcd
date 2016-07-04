@@ -4,12 +4,18 @@ import (
 	"sync"
 
 	etcd "github.com/coreos/etcd/clientv3"
+	"github.com/golang/glog"
 	"golang.org/x/net/context"
 )
 
+type Watches interface {
+	Watch(rev ZXid, xid Xid, path string, evtype EventType, cb func(ZXid))
+	Wait(rev ZXid, path string, evtype EventType)
+}
+
 type watches struct {
 	mu sync.Mutex
-	s  *Session
+	c  *etcd.Client
 
 	xid2watch map[Xid]*watch
 
@@ -18,6 +24,8 @@ type watches struct {
 }
 
 type watch struct {
+	c *etcd.Client
+
 	xid    Xid
 	evtype EventType
 	path   string
@@ -31,16 +39,43 @@ type watch struct {
 	donec    chan struct{}
 }
 
-func newWatches(s *Session) *watches {
+func (w *watch) isRelevant(ev *etcd.Event) (relevant bool) {
+	defer func() {
+		if !relevant {
+			glog.V(8).Infof("filtered watch event %+v", *ev)
+		}
+	}()
+	switch w.evtype {
+	case EventNodeDeleted:
+		if ev.Type != etcd.EventTypeDelete {
+			return
+		}
+	case EventNodeChildrenChanged:
+		if ev.Type != etcd.EventTypeDelete && !ev.IsCreate() {
+			return
+		}
+	case EventNodeDataChanged:
+		if !ev.IsModify() {
+			return
+		}
+	case EventNodeCreated:
+		if !ev.IsCreate() {
+			return
+		}
+	}
+	return true
+}
+
+func newWatches(c *etcd.Client) *watches {
 	ctx, cancel := context.WithCancel(context.TODO())
 	return &watches{
-		s:         s,
+		c:         c,
 		xid2watch: make(map[Xid]*watch),
 		ctx:       ctx,
 		cancel:    cancel}
 }
 
-func (ws *watches) watch(rev ZXid, xid Xid, path string, evtype EventType, cb func(ZXid)) {
+func (ws *watches) Watch(rev ZXid, xid Xid, path string, evtype EventType, cb func(ZXid)) {
 	ctx, cancel := context.WithCancel(ws.ctx)
 	var wch etcd.WatchChan
 	switch evtype {
@@ -49,9 +84,9 @@ func (ws *watches) watch(rev ZXid, xid Xid, path string, evtype EventType, cb fu
 	case EventNodeCreated:
 		fallthrough
 	case EventNodeDeleted:
-		wch = ws.s.c.Watch(ctx, "/zk/key/"+path, etcd.WithRev(int64(rev)))
+		wch = ws.c.Watch(ctx, "/zk/key/"+path, etcd.WithRev(int64(rev)))
 	case EventNodeChildrenChanged:
-		wch = ws.s.c.Watch(
+		wch = ws.c.Watch(
 			ctx,
 			getListPfx(path),
 			etcd.WithPrefix(),
@@ -61,7 +96,7 @@ func (ws *watches) watch(rev ZXid, xid Xid, path string, evtype EventType, cb fu
 		panic("unsupported watch op")
 	}
 
-	w := &watch{xid, evtype, path, wch, ctx, cancel, rev, make(chan struct{})}
+	w := &watch{ws.c, xid, evtype, path, wch, ctx, cancel, rev, make(chan struct{})}
 
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
@@ -86,32 +121,12 @@ func (ws *watches) runWatch(w *watch, cb func(ZXid)) {
 			if !ok {
 				return
 			}
-			if w.evtype == EventNodeDeleted {
-				isDel := false
-				for _, ev := range resp.Events {
-					if ev.Type == etcd.EventTypeDelete {
-						isDel = true
-						break
-					}
-				}
-				if !isDel {
-					break
-				}
-			} else if w.evtype == EventNodeChildrenChanged {
-				isChange := false
-				for _, ev := range resp.Events {
-					if ev.Kv.CreateRevision == 0 ||
-						ev.Kv.CreateRevision == ev.Kv.ModRevision {
-						isChange = true
-						break
-					}
-				}
-				if !isChange {
-					break
+			for _, ev := range resp.Events {
+				if w.isRelevant(ev) {
+					cb(ZXid(resp.Header.Revision))
+					w.cancel()
 				}
 			}
-			cb(ZXid(resp.Header.Revision))
-			w.cancel()
 		case <-w.ctx.Done():
 		}
 	}
@@ -132,7 +147,7 @@ func (ws *watches) close() {
 // note: path is internal zkpath representation
 // TODO: watch waiting may need to be proxy-wide to be correct
 // TODO: better algorithm
-func (ws *watches) wait(rev ZXid, path string, evtype EventType) {
+func (ws *watches) Wait(rev ZXid, path string, evtype EventType) {
 	ch := []<-chan struct{}{}
 	ws.mu.Lock()
 	for _, w := range ws.xid2watch {

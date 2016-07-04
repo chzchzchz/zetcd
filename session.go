@@ -1,7 +1,6 @@
 package zetcd
 
 import (
-	"encoding/binary"
 	"fmt"
 	"net"
 	"sync"
@@ -12,52 +11,48 @@ import (
 )
 
 type SessionPool struct {
-	sessions map[etcd.LeaseID]*Session
+	sessions map[etcd.LeaseID]Session
 	c        *etcd.Client
 	mu       sync.RWMutex
 }
 
-type Session struct {
-	id    etcd.LeaseID
-	zkc   net.Conn
-	outc  chan []byte
-	muOut sync.RWMutex
-	c     *etcd.Client
-	w     *watches
+type Session interface {
+	Conn
+	Watches
+	Sid() Sid
+	ZXid() ZXid
+	ConnReq() ConnectRequest
+	Backing() interface{}
+}
+
+type session struct {
+	Conn
+	*watches
+	id etcd.LeaseID
+	c  *etcd.Client
+	req ConnectRequest
 
 	leaseZXid ZXid
 	mu        sync.RWMutex
-
-	// stopc is closed to shutdown session
-	stopc chan struct{}
-	// donec is closed to signal session is torn down
-	donec chan struct{}
 }
 
-func NewSession(c *etcd.Client, zk net.Conn, id etcd.LeaseID) (*Session, error) {
-	outc := make(chan []byte, 16)
-	s := &Session{
-		id:    id,
-		zkc:   zk,
-		outc:  outc,
-		c:     c,
-		stopc: make(chan struct{}),
-		donec: make(chan struct{}),
-	}
-	s.w = newWatches(s)
+func (s *session) ConnReq() ConnectRequest { return s.req }
+func (s *session) Backing() interface{} { return s }
 
+func newSession(c *etcd.Client, zk net.Conn, id etcd.LeaseID) (*session, error) {
 	ctx, cancel := context.WithCancel(c.Ctx())
+	s := &session{Conn: NewConn(ctx, zk), id: id, c: c, watches: newWatches(c)}
+
 	kach, kaerr := c.KeepAlive(ctx, id)
 	if kaerr != nil {
+		cancel()
 		return nil, kaerr
 	}
+
 	go func() {
 		defer func() {
 			cancel()
-			s.muOut.Lock()
-			close(s.outc)
-			s.outc = nil
-			s.muOut.Unlock()
+			s.Close()
 		}()
 		for {
 			select {
@@ -71,16 +66,7 @@ func NewSession(c *etcd.Client, zk net.Conn, id etcd.LeaseID) (*Session, error) 
 				s.mu.Lock()
 				s.leaseZXid = ZXid(ka.ResponseHeader.Revision)
 				s.mu.Unlock()
-			case <-s.stopc:
-				return
-			}
-		}
-	}()
-
-	go func() {
-		defer close(s.donec)
-		for msg := range outc {
-			if _, err := s.zkc.Write(msg); err != nil {
+			case <-s.StopNotify():
 				return
 			}
 		}
@@ -89,51 +75,10 @@ func NewSession(c *etcd.Client, zk net.Conn, id etcd.LeaseID) (*Session, error) 
 	return s, nil
 }
 
-func (s *Session) Send(xid Xid, zxid ZXid, resp interface{}) error {
-	buf := make([]byte, 2*1024*1024)
-	hdr := &responseHeader{Xid: xid, Zxid: zxid, Err: errOk}
-
-	_, isEv := resp.(*WatcherEvent)
-	if isEv {
-		hdr.Xid = -1
-	}
-
-	ec, hasErr := resp.(*ErrCode)
-	if hasErr {
-		hdr.Err = *ec
-	}
-	n1, err1 := encodePacket(buf[4:], hdr)
-	if err1 != nil {
-		return err1
-	}
-	pktlen := n1
-	if !hasErr {
-		n2, err2 := encodePacket(buf[4+n1:], resp)
-		if err2 != nil {
-			return err2
-		}
-		pktlen += n2
-	}
-
-	binary.BigEndian.PutUint32(buf[:4], uint32(pktlen))
-	s.muOut.RLock()
-	defer s.muOut.RUnlock()
-	select {
-	case s.outc <- buf[:4+pktlen]:
-	case <-s.c.Ctx().Done():
-		return s.c.Ctx().Err()
-	}
-	return nil
-}
-
-func (s *Session) Close() {
-	close(s.stopc)
-	s.w.close()
-	<-s.donec
-}
+func (s *session) Sid() Sid { return Sid(s.id) }
 
 // ZXid gets the lease ZXid
-func (s *Session) ZXid() ZXid {
+func (s *session) ZXid() ZXid {
 	s.mu.RLock()
 	zxid := s.leaseZXid
 	s.mu.RUnlock()
@@ -142,11 +87,11 @@ func (s *Session) ZXid() ZXid {
 
 func NewSessionPool(client *etcd.Client) *SessionPool {
 	return &SessionPool{
-		sessions: make(map[etcd.LeaseID]*Session),
+		sessions: make(map[etcd.LeaseID]Session),
 		c:        client}
 }
 
-func (sp *SessionPool) Auth(zk net.Conn) (*Session, error) {
+func (sp *SessionPool) Auth(zk net.Conn) (Session, error) {
 	req := ConnectRequest{}
 	ReadPacket(zk, req)
 	glog.V(6).Infof("auth(%+v)", req)
@@ -175,10 +120,12 @@ func (sp *SessionPool) Auth(zk net.Conn) (*Session, error) {
 		Passwd:          []byte{}}
 	err = WritePacket(zk, resp)
 
-	s, serr := NewSession(sp.c, zk, lcr.ID)
+	s, serr := newSession(sp.c, zk, lcr.ID)
 	if serr != nil {
 		return nil, serr
 	}
+	s.req = req
+
 	sp.mu.Lock()
 	sp.sessions[s.id] = s
 	sp.mu.Unlock()

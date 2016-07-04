@@ -14,12 +14,11 @@ import (
 )
 
 type zkEtcd struct {
-	s *Session
+	c *etcd.Client
+	s Session
 }
 
-func NewZKEtcd(s *Session) ZK {
-	return &zkEtcd{s}
-}
+func NewZKEtcd(c *etcd.Client, s Session) ZK { return &zkEtcd{c, s} }
 
 func (z *zkEtcd) CloseZK() error {
 	z.s.Close()
@@ -33,7 +32,7 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 	switch op.Flags {
 	case 0:
 	case FlagEphemeral:
-		opts = append(opts, etcd.WithLease(etcd.LeaseID(z.s.id)))
+		opts = append(opts, etcd.WithLease(etcd.LeaseID(z.s.Sid())))
 	default:
 		// support seq flag
 		panic("unsupported create flags")
@@ -73,7 +72,7 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 		return nil
 	}
 
-	resp, err := v3sync.NewSTMSerializable(z.s.c.Ctx(), z.s.c, applyf)
+	resp, err := v3sync.NewSTMSerializable(z.c.Ctx(), z.c, applyf)
 	errResp := errOk
 	// XXX do I need valid zxid on errors?
 	switch err {
@@ -95,7 +94,7 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 	}
 
 	zxid := ZXid(resp.Header.Revision)
-	z.s.w.wait(zxid, p, EventNodeCreated)
+	z.s.Wait(zxid, p, EventNodeCreated)
 	crResp := &CreateResponse{op.Path}
 
 	glog.V(7).Infof("Create(%v) = (zxid=%v, resp=%+v)", zxid, xid, *crResp)
@@ -108,7 +107,7 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 	resp := &GetChildren2Response{}
 	p := mkPath(op.Path)
 
-	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(statGets(p)...).Commit()
+	txnresp, err := z.c.Txn(z.c.Ctx()).Then(statGets(p)...).Commit()
 	if err != nil {
 		return err
 	}
@@ -126,7 +125,7 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 	}
 
 	zxid := ZXid(children.Header.Revision)
-	z.s.w.wait(zxid, p, EventNodeChildrenChanged)
+	z.s.Wait(zxid, p, EventNodeChildrenChanged)
 
 	if op.Watch {
 		f := func(newzxid ZXid) {
@@ -138,7 +137,7 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 			glog.V(7).Infof("WatchChild (%v,%v,%+v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
-		z.s.w.watch(zxid, xid, p, EventNodeChildrenChanged, f)
+		z.s.Watch(zxid, xid, p, EventNodeChildrenChanged, f)
 	}
 
 	glog.V(7).Infof("GetChildren2(%v) = (zxid=%v, resp=%+v)", zxid, xid, *resp)
@@ -190,7 +189,7 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 		return nil
 	}
 
-	resp, err := v3sync.NewSTMSerializable(z.s.c.Ctx(), z.s.c, applyf)
+	resp, err := v3sync.NewSTMSerializable(z.c.Ctx(), z.c, applyf)
 
 	switch err {
 	case ErrNoNode:
@@ -206,7 +205,7 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 
 	delResp := &DeleteResponse{}
 	zxid := ZXid(resp.Header.Revision)
-	z.s.w.wait(zxid, p, EventNodeDeleted)
+	z.s.Wait(zxid, p, EventNodeDeleted)
 
 	glog.V(7).Infof("Delete(%v) = (zxid=%v, resp=%+v)", xid, zxid, *delResp)
 	return z.s.Send(xid, zxid, delResp)
@@ -217,7 +216,7 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
 
 	p := mkPath(op.Path)
 	gets := statGets(p)
-	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(gets...).Commit()
+	txnresp, err := z.c.Txn(z.c.Ctx()).Then(gets...).Commit()
 	if err != nil {
 		return err
 	}
@@ -225,7 +224,7 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
 	exResp := &ExistsResponse{}
 	exResp.Stat = statTxn(txnresp)
 	zxid := ZXid(txnresp.Header.Revision)
-	z.s.w.wait(zxid, p, EventNodeCreated)
+	z.s.Wait(zxid, p, EventNodeCreated)
 
 	if op.Watch {
 		ev := EventNodeDeleted
@@ -241,7 +240,7 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
 			glog.V(7).Infof("WatchExists (%v,%v,%+v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
-		z.s.w.watch(zxid, xid, p, ev, f)
+		z.s.Watch(zxid, xid, p, ev, f)
 	}
 
 	if exResp.Stat.Mtime == 0 {
@@ -258,7 +257,7 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 
 	p := mkPath(op.Path)
 	gets := statGets(p)
-	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(gets...).Commit()
+	txnresp, err := z.c.Txn(z.c.Ctx()).Then(gets...).Commit()
 	if err != nil {
 		return err
 	}
@@ -271,7 +270,7 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 	}
 
 	zxid := ZXid(txnresp.Header.Revision)
-	z.s.w.wait(zxid, p, EventNodeDataChanged)
+	z.s.Wait(zxid, p, EventNodeDataChanged)
 
 	if op.Watch {
 		f := func(newzxid ZXid) {
@@ -283,7 +282,7 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 			glog.V(7).Infof("WatchData (%v,%v,%+v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
-		z.s.w.watch(zxid, xid, p, EventNodeDataChanged, f)
+		z.s.Watch(zxid, xid, p, EventNodeDataChanged, f)
 	}
 	datResp.Data = []byte(txnresp.Responses[2].GetResponseRange().Kvs[0].Value)
 
@@ -309,14 +308,14 @@ func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) error {
 		s.Put("/zk/ver/"+p, string(encodeInt64(int64(currentVersion+1))))
 		s.Put("/zk/mtime/"+p, encodeTime())
 
-		resp, err := z.s.c.Txn(z.s.c.Ctx()).Then(statGets(p)...).Commit()
+		resp, err := z.c.Txn(z.c.Ctx()).Then(statGets(p)...).Commit()
 		if err != nil {
 			return err
 		}
 		statResp = *resp
 		return nil
 	}
-	resp, err := v3sync.NewSTMSerializable(z.s.c.Ctx(), z.s.c, applyf)
+	resp, err := v3sync.NewSTMSerializable(z.c.Ctx(), z.c, applyf)
 
 	switch err {
 	case nil:
@@ -346,7 +345,7 @@ func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) error {
 
 	gets := []etcd.Op{etcd.OpGet("/zk/acl/" + p)}
 	gets = append(gets, statGets(p)...)
-	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(gets...).Commit()
+	txnresp, err := z.c.Txn(z.c.Ctx()).Then(gets...).Commit()
 	if err != nil {
 		return err
 	}
@@ -370,7 +369,7 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
 	glog.V(7).Infof("GetChildren(%v,%+v)", xid, *op)
 
 	p := mkPath(op.Path)
-	txnresp, err := z.s.c.Txn(z.s.c.Ctx()).Then(statGets(p)...).Commit()
+	txnresp, err := z.c.Txn(z.c.Ctx()).Then(statGets(p)...).Commit()
 	if err != nil {
 		return err
 	}
@@ -397,7 +396,7 @@ func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error {
 	glog.V(7).Infof("Sync(%v,%+v)", xid, *op)
 
 	// linearized read
-	resp, err := z.s.c.Get(z.s.c.Ctx(), "/zk/ver/"+mkPath(op.Path))
+	resp, err := z.c.Get(z.c.Ctx(), "/zk/ver/"+mkPath(op.Path))
 	if err != nil {
 		return err
 	}
@@ -437,7 +436,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
 			glog.V(7).Infof("WatchData* (%v,%v,%v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
-		z.s.w.watch(op.RelativeZxid, xid, p, EventNodeDataChanged, f)
+		z.s.Watch(op.RelativeZxid, xid, p, EventNodeDataChanged, f)
 	}
 
 	ops := make([]etcd.Op, len(op.ExistWatches))
@@ -448,7 +447,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
 			etcd.WithRev(int64(op.RelativeZxid)))
 	}
 
-	resp, err := z.s.c.Txn(z.s.c.Ctx()).Then(ops...).Commit()
+	resp, err := z.c.Txn(z.c.Ctx()).Then(ops...).Commit()
 	if err != nil {
 		return err
 	}
@@ -471,7 +470,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
 			glog.V(7).Infof("WatchExist* (%v,%v,%v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
-		z.s.w.watch(op.RelativeZxid, xid, p, ev, f)
+		z.s.Watch(op.RelativeZxid, xid, p, ev, f)
 	}
 	for _, cw := range op.ChildWatches {
 		childPath := cw
@@ -485,7 +484,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
 			glog.V(7).Infof("WatchChild* (%v,%v,%v)", xid, newzxid, *wresp)
 			z.s.Send(xid, newzxid, wresp)
 		}
-		z.s.w.watch(op.RelativeZxid, xid, p, EventNodeChildrenChanged, f)
+		z.s.Watch(op.RelativeZxid, xid, p, EventNodeChildrenChanged, f)
 	}
 
 	swresp := &SetWatchesResponse{}

@@ -54,8 +54,8 @@ func TestGetDataW(t *testing.T) {
 			t.Fatal(werr)
 		}
 		select {
-		case <-ch:
-			t.Fatalf("should block on get channel")
+		case resp := <-ch:
+			t.Fatalf("should block on get channel, got %+v", resp)
 		case <-time.After(10 * time.Millisecond):
 		}
 		if _, err := c.Set("/abc", []byte("a"), -1); err != nil {
@@ -253,7 +253,7 @@ func serve(c *etcd.Client) (<-chan struct{}, func()) {
 		os.Exit(-1)
 	}
 	go func() {
-		Serve(c.Ctx(), ln, NewAuth(c))
+		Serve(c.Ctx(), ln, NewAuth(c), NewZK(c))
 		close(ch)
 	}()
 	return ch, func() { ln.Close() }
