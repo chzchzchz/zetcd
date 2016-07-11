@@ -48,7 +48,7 @@ func NewConn(ctx context.Context, zk net.Conn) Conn {
 	go func() {
 		defer close(c.readc)
 		for {
-			xid, req, err := ReadOp(c.zkc)
+			xid, req, err := readReqOp(c.zkc)
 			select {
 			case c.readc <- ZKRequest{xid, req, err}:
 				if err != nil {
@@ -78,7 +78,7 @@ func (c *conn) Read() <-chan ZKRequest { return c.readc }
 
 func (c *conn) Send(xid Xid, zxid ZXid, resp interface{}) error {
 	buf := make([]byte, 2*1024*1024)
-	hdr := &responseHeader{Xid: xid, Zxid: zxid, Err: errOk}
+	hdr := &ResponseHeader{Xid: xid, Zxid: zxid, Err: errOk}
 
 	_, isEv := resp.(*WatcherEvent)
 	if isEv {

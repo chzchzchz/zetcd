@@ -28,8 +28,8 @@ type Session interface {
 type session struct {
 	Conn
 	*watches
-	id etcd.LeaseID
-	c  *etcd.Client
+	id  etcd.LeaseID
+	c   *etcd.Client
 	req ConnectRequest
 
 	leaseZXid ZXid
@@ -37,7 +37,7 @@ type session struct {
 }
 
 func (s *session) ConnReq() ConnectRequest { return s.req }
-func (s *session) Backing() interface{} { return s }
+func (s *session) Backing() interface{}    { return s }
 
 func newSession(c *etcd.Client, zk net.Conn, id etcd.LeaseID) (*session, error) {
 	ctx, cancel := context.WithCancel(c.Ctx())

@@ -186,7 +186,7 @@ type requestHeader struct {
 	Opcode Op
 }
 
-type responseHeader struct {
+type ResponseHeader struct {
 	Xid  Xid
 	Zxid ZXid
 	Err  ErrCode

@@ -32,6 +32,7 @@ const (
 
 	// Not in protocol, used internally
 	opWatcherEvent = -2
+	opInvalid      = -100000
 )
 
 type EventType int32

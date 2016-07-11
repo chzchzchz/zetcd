@@ -230,17 +230,24 @@ func WritePacket(zk net.Conn, r interface{}) error {
 	return err
 }
 
-func ReadOp(zk net.Conn) (Xid, interface{}, error) {
+func readBuf(zk net.Conn) ([]byte, uint32, error) {
 	buf := make([]byte, 256)
 	if _, err := io.ReadFull(zk, buf[:4]); err != nil {
-		return 0, nil, err
+		return nil, 0, err
 	}
-
-	blen := int(binary.BigEndian.Uint32(buf[:4]))
-	if cap(buf) < blen {
+	blen := binary.BigEndian.Uint32(buf[:4])
+	if cap(buf) < int(blen) {
 		buf = make([]byte, blen)
 	}
 	if _, err := io.ReadFull(zk, buf[:blen]); err != nil {
+		return nil, 0, err
+	}
+	return buf, blen, nil
+}
+
+func readReqOp(zk net.Conn) (Xid, interface{}, error) {
+	buf, blen, err := readBuf(zk)
+	if err != nil {
 		return 0, nil, err
 	}
 	hdr := &requestHeader{}
@@ -251,6 +258,31 @@ func ReadOp(zk net.Conn) (Xid, interface{}, error) {
 	op := op2req(hdr.Opcode)
 	_, oerr := decodePacket(buf[n:blen], op)
 	return hdr.Xid, op, oerr
+
+}
+
+func readRespOp(zk net.Conn, xid2resp func(Xid) interface{}) (*ResponseHeader, interface{}, error) {
+	buf, blen, err := readBuf(zk)
+	if err != nil {
+		return nil, nil, err
+	}
+	hdr := &ResponseHeader{}
+	n, herr := decodePacket(buf, hdr)
+	if herr != nil {
+		return nil, nil, herr
+	}
+
+	var resp interface{}
+	if hdr.Xid == -1 {
+		resp = &WatcherEvent{}
+	} else {
+		resp = xid2resp(hdr.Xid)
+	}
+	if resp == nil {
+		return nil, nil, ErrAPIError
+	}
+	_, oerr := decodePacket(buf[n:blen], resp)
+	return hdr, resp, oerr
 }
 
 func (r *MultiRequest) Encode(buf []byte) (int, error) {

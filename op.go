@@ -44,3 +44,79 @@ func op2req(op Op) interface{} {
 	}
 	return nil
 }
+
+func op2resp(op Op) interface{} {
+	switch op {
+	case opGetChildren2:
+		return &GetChildren2Response{}
+	case opPing:
+		return &PingResponse{}
+	case opCreate:
+		return &CreateResponse{}
+	case opSetWatches:
+		return &SetWatchesResponse{}
+	case opSetData:
+		return &SetDataResponse{}
+	case opGetData:
+		return &GetDataResponse{}
+	case opDelete:
+		return &DeleteResponse{}
+	case opExists:
+		return &ExistsResponse{}
+	case opGetAcl:
+		return &GetAclResponse{}
+	case opSetAcl:
+		return &SetAclResponse{}
+	case opGetChildren:
+		return &GetChildrenResponse{}
+	case opSync:
+		return &SyncResponse{}
+	case opMulti:
+		return &MultiResponse{}
+	case opClose:
+		return &CloseResponse{}
+	case opSetAuth:
+		return &SetAuthResponse{}
+	default:
+		fmt.Println("unknown opcode ", op)
+	}
+	return nil
+}
+
+func req2op(req interface{}) Op {
+	switch req.(type) {
+	case *GetChildren2Request:
+		return opGetChildren2
+	case *PingRequest:
+		return opPing
+	case *CreateRequest:
+		return opCreate
+	case *SetWatchesRequest:
+		return opSetWatches
+	case *SetDataRequest:
+		return opSetData
+	case *GetDataRequest:
+		return opGetData
+	case *DeleteRequest:
+		return opDelete
+	case *ExistsRequest:
+		return opExists
+	case *GetAclRequest:
+		return opGetAcl
+	case *SetAclRequest:
+		return opSetAcl
+	case *GetChildrenRequest:
+		return opGetChildren
+	case *SyncRequest:
+		return opSync
+	case *MultiRequest:
+		return opMulti
+	case *CloseRequest:
+		return opClose
+	case *SetAuthRequest:
+		return opSetAuth
+	default:
+		fmt.Println("unknown request", req)
+	}
+	return opInvalid
+}
