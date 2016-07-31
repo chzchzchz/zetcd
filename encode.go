@@ -273,6 +273,9 @@ func readRespOp(zk net.Conn, xid2resp func(Xid) interface{}) (*ResponseHeader, i
 	}
 
 	var resp interface{}
+	if hdr.Err != 0 {
+		return hdr, nil, nil
+	}
 	if hdr.Xid == -1 {
 		resp = &WatcherEvent{}
 	} else {
