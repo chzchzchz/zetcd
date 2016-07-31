@@ -22,6 +22,6 @@ func NewAuth(c *etcd.Client) AuthFunc {
 
 func NewZK(c *etcd.Client) ZKFunc {
 	return func(s Session) (ZK, error) {
-		return NewZKEtcd(c, s), nil
+		return NewZKLog(NewZKEtcd(c, s)), nil
 	}
 }

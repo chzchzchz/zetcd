@@ -14,6 +14,7 @@ func NewAuth(addrs []string) zetcd.AuthFunc {
 
 func NewZK() zetcd.ZKFunc {
 	return func(s zetcd.Session) (zetcd.ZK, error) {
-		return newZK(s)
+		zk, err := newZK(s)
+		return zetcd.NewZKLog(zk), err
 	}
 }
