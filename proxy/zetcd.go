@@ -31,7 +31,7 @@ func main() {
 	var zkf zetcd.ZKFunc
 	var ctx context.Context
 
-	if bridgeAddr == nil {
+	if bridgeAddr == nil || len(*bridgeAddr) == 0 {
 		// talk to the etcd3 server
 		cfg := etcd.Config{Endpoints: []string{*etcdaddr}}
 		c, err := etcd.New(cfg)
@@ -40,7 +40,7 @@ func main() {
 		}
 		authf = zetcd.NewAuth(c)
 		zkf = zetcd.NewZK(c)
-		if oracleAddr != nil {
+		if oracleAddr != nil && len(*oracleAddr) != 0{
 			panic("oops")
 			// auth = xchk.NewAuth(auth)
 			// zkf = xchk.NewZK(*oracleaddr, zkf)
