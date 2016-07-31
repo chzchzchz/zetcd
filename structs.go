@@ -119,7 +119,7 @@ type SetAclRequest struct {
 
 type SetAclResponse statResponse
 
-type GetChildrenRequest pathRequest
+type GetChildrenRequest pathWatchRequest
 
 type GetChildrenResponse struct {
 	Children []string

@@ -371,6 +371,19 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
 	}
 	zxid := ZXid(children.Header.Revision)
 
+	if op.Watch {
+		f := func(newzxid ZXid) {
+			wresp := &WatcherEvent{
+				Type:  EventNodeChildrenChanged,
+				State: StateSyncConnected,
+				Path:  op.Path,
+			}
+			glog.V(7).Infof("WatchChild (%v,%v,%+v)", xid, newzxid, *wresp)
+			z.s.Send(xid, newzxid, wresp)
+		}
+		z.s.Watch(zxid, xid, p, EventNodeChildrenChanged, f)
+	}
+
 	glog.V(7).Infof("GetChildren(%v) = (zxid=%v, resp=%+v)", xid, zxid, *resp)
 	return z.s.Send(xid, zxid, resp)
 }
