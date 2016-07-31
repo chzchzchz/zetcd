@@ -33,7 +33,7 @@ func newSession(servers []string, conn net.Conn) (*session, error) {
 		return nil, err
 	}
 	glog.V(6).Infof("auth(%+v)", req)
-	if req.ProtocolVersion != 0 || req.SessionID != 0 {
+	if req.ProtocolVersion != 0 {
 		panic("unhandled req stuff!")
 	}
 	// create connection to zk server based on 'servers'
