@@ -76,8 +76,13 @@ func newSession(servers []string, conn net.Conn) (*session, error) {
 
 // recvLoop forwards responses from the real zk server to the zetcd connection.
 func (s *session) recvLoop() {
+	defer s.cancel()
 	for resp := range s.zkc.Read() {
-		glog.V(6).Infof("zkresp=(%+v,%+v,%+v)", *resp.Hdr, resp.Resp, resp.Err)
+		if resp.Err != nil {
+			glog.V(6).Infof("zkresp=Err(%v)", resp.Err)
+			return
+		}
+		glog.V(6).Infof("zkresp=(%+v,%+v)", *resp.Hdr, resp.Resp)
 		var r interface{}
 		if resp.Hdr.Err != 0 {
 			r = &resp.Hdr.Err
