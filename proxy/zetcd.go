@@ -6,51 +6,96 @@ import (
 	"net"
 	"os"
 
-	"golang.org/x/net/context"
 	"github.com/chzchzchz/zetcd"
+	"github.com/chzchzchz/zetcd/xchk"
 	"github.com/chzchzchz/zetcd/zk"
 	etcd "github.com/coreos/etcd/clientv3"
+	"golang.org/x/net/context"
 )
 
+type personality struct {
+	authf zetcd.AuthFunc
+	zkf   zetcd.ZKFunc
+	ctx   context.Context
+}
+
+func newZKEtcd(etcdAddr string) (p personality) {
+	// talk to the etcd3 server
+	cfg := etcd.Config{Endpoints: []string{etcdAddr}}
+	c, err := etcd.New(cfg)
+	if err != nil {
+		panic(err)
+	}
+	p.authf = zetcd.NewAuth(c)
+	p.zkf = zetcd.NewZK(c)
+	p.ctx = c.Ctx()
+	return p
+}
+
+func newBridge(bridgeAddr string) (p personality) {
+	// proxy to zk server
+	p.authf = zk.NewAuth([]string{bridgeAddr})
+	p.zkf = zk.NewZK()
+	p.ctx = context.Background()
+	return p
+}
+
+func newOracle(etcdAddr, bridgeAddr, oracle string) (p personality) {
+	var cper, oper personality
+	switch oracle {
+	case "zk":
+		cper, oper = newZKEtcd(etcdAddr), newBridge(bridgeAddr)
+	case "etcd":
+		oper, cper = newZKEtcd(etcdAddr), newBridge(bridgeAddr)
+	default:
+		fmt.Println("oracle expected etcd or zk, got", oracle)
+		os.Exit(1)
+	}
+	p.authf = xchk.NewAuth(cper.authf, oper.authf)
+	p.zkf = xchk.NewZK(cper.zkf, oper.zkf)
+	p.ctx = cper.ctx
+	return p
+}
+
 func main() {
-	etcdaddr := flag.String("endpoint", "localhost:2379", "etcd3 client address")
-	zkaddr := flag.String("zkaddr", ":2181", "address for serving zookeeper clients")
-	oracleAddr := flag.String("zkoracle", "", "oracle zookeeper server address")
-	bridgeAddr := flag.String("zkbridge", "", "bridge zookeeper server address (for debugging)")
+	etcdAddr := flag.String("endpoint", "", "etcd3 client address")
+	zkaddr := flag.String("zkaddr", "", "address for serving zookeeper clients")
+	oracle := flag.String("oracle", "", "oracle zookeeper server address")
+	bridgeAddr := flag.String("zkbridge", "", "bridge zookeeper server address")
 
 	flag.Parse()
 	fmt.Println("Running zetcd proxy")
 
+	if len(*zkaddr) == 0 {
+		fmt.Println("expected -zkaddr")
+		os.Exit(1)
+	}
+
 	// listen on zookeeper server port
 	ln, err := net.Listen("tcp", *zkaddr)
 	if err != nil {
-		os.Exit(-1)
+		os.Exit(1)
 	}
 
-	var authf zetcd.AuthFunc
-	var zkf zetcd.ZKFunc
-	var ctx context.Context
-
-	if bridgeAddr == nil || len(*bridgeAddr) == 0 {
-		// talk to the etcd3 server
-		cfg := etcd.Config{Endpoints: []string{*etcdaddr}}
-		c, err := etcd.New(cfg)
-		if err != nil {
-			panic(err)
+	var p personality
+	switch {
+	case *oracle != "":
+		if len(*etcdAddr) == 0 || len(*bridgeAddr) == 0 {
+			fmt.Println("expected -endpoint and -zkbridge")
+			os.Exit(1)
 		}
-		authf = zetcd.NewAuth(c)
-		zkf = zetcd.NewZK(c)
-		if oracleAddr != nil && len(*oracleAddr) != 0{
-			panic("oops")
-			// auth = xchk.NewAuth(auth)
-			// zkf = xchk.NewZK(*oracleaddr, zkf)
-		}
-		ctx = c.Ctx()
-	} else {
-		// boring bridge for testing
-		authf = zk.NewAuth([]string{*bridgeAddr})
-		zkf = zk.NewZK()
-		ctx = context.Background()
+		p = newOracle(*etcdAddr, *bridgeAddr, *oracle)
+	case len(*etcdAddr) != 0 && len(*bridgeAddr) != 0:
+		fmt.Println("expected -endpoint or -zkbridge but not both")
+		os.Exit(1)
+	case len(*etcdAddr) != 0:
+		p = newZKEtcd(*etcdAddr)
+	case len(*bridgeAddr) != 0:
+		p = newBridge(*bridgeAddr)
+	default:
+		fmt.Println("expected -endpoint or -zkbridge")
+		os.Exit(1)
 	}
-	zetcd.Serve(ctx, ln, authf, zkf)
+
+	zetcd.Serve(p.ctx, ln, p.authf, p.zkf)
 }
