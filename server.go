@@ -8,7 +8,7 @@ import (
 )
 
 func handle(conn net.Conn, auth AuthFunc, zk ZKFunc) {
-	s, serr := auth(conn)
+	s, serr := auth(NewAuthConn(conn))
 	if serr != nil {
 		return
 	}

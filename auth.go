@@ -1,22 +1,16 @@
 package zetcd
 
 import (
-	"net"
-
 	etcd "github.com/coreos/etcd/clientv3"
 )
 
-type AuthFunc func(net.Conn) (Session, error)
+type AuthFunc func(AuthConn) (Session, error)
 type ZKFunc func(Session) (ZK, error)
 
 func NewAuth(c *etcd.Client) AuthFunc {
 	sp := NewSessionPool(c)
-	return func(zk net.Conn) (Session, error) {
-		s, err := sp.Auth(zk)
-		if err != nil {
-			return nil, err
-		}
-		return s, nil
+	return func(zka AuthConn) (Session, error) {
+		return sp.Auth(zka)
 	}
 }
 

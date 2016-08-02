@@ -2,11 +2,9 @@ package zetcd
 
 import (
 	"fmt"
-	"net"
 	"sync"
 
 	etcd "github.com/coreos/etcd/clientv3"
-	"github.com/golang/glog"
 	"golang.org/x/net/context"
 )
 
@@ -39,9 +37,9 @@ type session struct {
 func (s *session) ConnReq() ConnectRequest { return s.req }
 func (s *session) Backing() interface{}    { return s }
 
-func newSession(c *etcd.Client, zk net.Conn, id etcd.LeaseID) (*session, error) {
+func newSession(c *etcd.Client, zkc Conn, id etcd.LeaseID) (*session, error) {
 	ctx, cancel := context.WithCancel(c.Ctx())
-	s := &session{Conn: NewConn(ctx, zk), id: id, c: c, watches: newWatches(c)}
+	s := &session{Conn: zkc, id: id, c: c, watches: newWatches(c)}
 
 	kach, kaerr := c.KeepAlive(ctx, id)
 	if kaerr != nil {
@@ -91,10 +89,13 @@ func NewSessionPool(client *etcd.Client) *SessionPool {
 		c:        client}
 }
 
-func (sp *SessionPool) Auth(zk net.Conn) (Session, error) {
-	req := ConnectRequest{}
-	ReadPacket(zk, req)
-	glog.V(6).Infof("auth(%+v)", req)
+func (sp *SessionPool) Auth(zka AuthConn) (Session, error) {
+	defer zka.Close()
+	areq, err := zka.Read()
+	if err != nil {
+		return nil, err
+	}
+	req := areq.Req
 
 	if req.ProtocolVersion != 0 ||
 		req.SessionID != 0 {
@@ -118,13 +119,16 @@ func (sp *SessionPool) Auth(zk net.Conn) (Session, error) {
 		TimeOut:         int32(lcr.TTL * 1000),
 		SessionID:       Sid(lid),
 		Passwd:          []byte{}}
-	err = WritePacket(zk, resp)
+	zkc, aerr := zka.Write(AuthResponse{Resp: resp})
+	if zkc == nil || aerr != nil {
+		return nil, aerr
+	}
 
-	s, serr := newSession(sp.c, zk, lcr.ID)
+	s, serr := newSession(sp.c, zkc, lcr.ID)
 	if serr != nil {
 		return nil, serr
 	}
-	s.req = req
+	s.req = *areq.Req
 
 	sp.mu.Lock()
 	sp.sessions[s.id] = s

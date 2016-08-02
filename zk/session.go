@@ -25,14 +25,14 @@ func (s *session) ZXid() zetcd.ZXid { return 111111 }
 func (s *session) ConnReq() zetcd.ConnectRequest { return s.connReq }
 func (s *session) Backing() interface{}          { return s }
 
-func newSession(servers []string, conn net.Conn) (*session, error) {
+func newSession(servers []string, zka zetcd.AuthConn) (*session, error) {
+	defer zka.Close()
 	glog.V(6).Infof("newSession(%s)", servers)
 	req := zetcd.ConnectRequest{}
-	if err := zetcd.ReadPacket(conn, &req); err != nil {
-		glog.V(6).Infof("error reading connection request (%v)", err)
+	areq, err := zka.Read()
+	if err != nil {
 		return nil, err
 	}
-	glog.V(6).Infof("auth(%+v)", req)
 	if req.ProtocolVersion != 0 {
 		panic("unhandled req stuff!")
 	}
@@ -43,7 +43,7 @@ func newSession(servers []string, conn net.Conn) (*session, error) {
 		return nil, err
 	}
 	// send connection request
-	if err = zetcd.WritePacket(zkconn, &req); err != nil {
+	if err = zetcd.WritePacket(zkconn, areq.Req); err != nil {
 		glog.V(6).Infof("failed to write connection request (%v)", err)
 		zkconn.Close()
 		return nil, err
@@ -55,15 +55,17 @@ func newSession(servers []string, conn net.Conn) (*session, error) {
 		return nil, err
 	}
 	// pass response back to proxy
-	if err := zetcd.WritePacket(conn, &resp); err != nil {
+	zkc, aerr := zka.Write(zetcd.AuthResponse{Resp: &resp})
+	if zkc == nil || aerr != nil {
 		zkconn.Close()
-		return nil, err
+		return nil, aerr
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	glog.V(6).Infof("auth resp OK (%+v)", resp)
 
 	s := &session{
-		Conn:    zetcd.NewConn(ctx, conn),
+		Conn:    zkc,
 		zkc:     zetcd.NewClient(ctx, zkconn),
 		connReq: req,
 		sid:     resp.SessionID,

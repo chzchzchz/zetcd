@@ -4,8 +4,6 @@ import (
 	"encoding/binary"
 	"net"
 	"sync"
-
-	"golang.org/x/net/context"
 )
 
 type Conn interface {
@@ -16,7 +14,6 @@ type Conn interface {
 }
 
 type conn struct {
-	ctx   context.Context
 	zkc   net.Conn
 	outc  chan []byte
 	readc chan ZKRequest
@@ -34,10 +31,9 @@ type ZKRequest struct {
 	err error
 }
 
-func NewConn(ctx context.Context, zk net.Conn) Conn {
+func NewConn(zk net.Conn) Conn {
 	outc := make(chan []byte, 16)
 	c := &conn{
-		ctx:   ctx,
 		zkc:   zk,
 		outc:  outc,
 		readc: make(chan ZKRequest),
@@ -108,8 +104,6 @@ func (c *conn) Send(xid Xid, zxid ZXid, resp interface{}) error {
 	select {
 	case c.outc <- buf[:4+pktlen]:
 	case <-c.donec:
-	case <-c.ctx.Done():
-		return c.ctx.Err()
 	}
 	return nil
 }
