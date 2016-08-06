@@ -23,8 +23,14 @@ func handle(conn net.Conn, auth AuthFunc, zk ZKFunc) {
 		if zkreq.err != nil {
 			break
 		}
-		if derr := DispatchZK(zke, zkreq.xid, zkreq.req); derr != nil {
+		zkresp := DispatchZK(zke, zkreq.xid, zkreq.req)
+		if zkresp.Err != nil {
 			break
+		}
+		if zkresp.Hdr.Err == 0 {
+			s.Send(zkresp.Hdr.Xid, zkresp.Hdr.Zxid, zkresp.Resp)
+		} else {
+			s.Send(zkresp.Hdr.Xid, zkresp.Hdr.Zxid, &zkresp.Hdr.Err)
 		}
 	}
 }

@@ -2,29 +2,30 @@ package zetcd
 
 import "fmt"
 
+// ZK is a synchronous interface
 type ZK interface {
-	Create(xid Xid, op *CreateRequest) error
-	Delete(xid Xid, op *DeleteRequest) error
-	Exists(xid Xid, op *ExistsRequest) error
-	GetData(xid Xid, op *GetDataRequest) error
-	SetData(xid Xid, op *SetDataRequest) error
-	GetAcl(xid Xid, op *GetAclRequest) error
-	SetAcl(xid Xid, op *SetAclRequest) error
-	GetChildren(xid Xid, op *GetChildrenRequest) error
-	Sync(xid Xid, op *SyncRequest) error
-	Ping(xid Xid, op *PingRequest) error
-	GetChildren2(xid Xid, op *GetChildren2Request) error
+	Create(xid Xid, op *CreateRequest) ZKResponse
+	Delete(xid Xid, op *DeleteRequest) ZKResponse
+	Exists(xid Xid, op *ExistsRequest) ZKResponse
+	GetData(xid Xid, op *GetDataRequest) ZKResponse
+	SetData(xid Xid, op *SetDataRequest) ZKResponse
+	GetAcl(xid Xid, op *GetAclRequest) ZKResponse
+	SetAcl(xid Xid, op *SetAclRequest) ZKResponse
+	GetChildren(xid Xid, op *GetChildrenRequest) ZKResponse
+	Sync(xid Xid, op *SyncRequest) ZKResponse
+	Ping(xid Xid, op *PingRequest) ZKResponse
+	GetChildren2(xid Xid, op *GetChildren2Request) ZKResponse
 	// opCheck		= 13
-	Multi(xid Xid, op *MultiRequest) error
-	Close(xid Xid, op *CloseRequest) error
-	SetAuth(xid Xid, op *SetAuthRequest) error
-	SetWatches(xid Xid, op *SetWatchesRequest) error
+	Multi(xid Xid, op *MultiRequest) ZKResponse
+	Close(xid Xid, op *CloseRequest) ZKResponse
+	SetAuth(xid Xid, op *SetAuthRequest) ZKResponse
+	SetWatches(xid Xid, op *SetWatchesRequest) ZKResponse
 
 	// close all resources for this zk
 	CloseZK() error
 }
 
-func DispatchZK(zk ZK, xid Xid, op interface{}) error {
+func DispatchZK(zk ZK, xid Xid, op interface{}) ZKResponse {
 	switch op := op.(type) {
 	case *CreateRequest:
 		return zk.Create(xid, op)
@@ -51,5 +52,5 @@ func DispatchZK(zk ZK, xid Xid, op interface{}) error {
 	default:
 		fmt.Printf("unexpected type %d %T\n", xid, op)
 	}
-	return ErrAPIError
+	return mkZKErr(xid, 0, errAPIError)
 }

@@ -132,15 +132,15 @@ type ErrCode int32
 const (
 	errOk ErrCode = 0
 	// System and server-side errors
-	errSystemError          = -1
-	errRuntimeInconsistency = -2
-	errDataInconsistency    = -3
-	errConnectionLoss       = -4
-	errMarshallingError     = -5
-	errUnimplemented        = -6
-	errOperationTimeout     = -7
-	errBadArguments         = -8
-	errInvalidState         = -9
+	errSystemError          = ErrCode(-1)
+	errRuntimeInconsistency = ErrCode(-2)
+	errDataInconsistency    = ErrCode(-3)
+	errConnectionLoss       = ErrCode(-4)
+	errMarshallingError     = ErrCode(-5)
+	errUnimplemented        = ErrCode(-6)
+	errOperationTimeout     = ErrCode(-7)
+	errBadArguments         = ErrCode(-8)
+	errInvalidState         = ErrCode(-9)
 	// API errors
 	errAPIError                = ErrCode(-100)
 	errNoNode                  = ErrCode(-101) // *

@@ -17,6 +17,8 @@ type session struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	futures map[zetcd.Xid]chan zetcd.ZKResponse
 }
 
 func (s *session) Sid() zetcd.Sid   { return s.sid }
@@ -71,20 +73,43 @@ func newSession(servers []string, zka zetcd.AuthConn) (*session, error) {
 		sid:     resp.SessionID,
 		ctx:     ctx,
 		cancel:  cancel,
+		futures: make(map[zetcd.Xid]chan zetcd.ZKResponse),
 	}
 	go s.recvLoop()
 	return s, nil
 }
 
+func (s *session) future(xid zetcd.Xid, op interface{}) <-chan zetcd.ZKResponse {
+	ch := make(chan zetcd.ZKResponse, 1)
+	if err := s.zkc.Send(xid, op); err != nil {
+		ch <- zetcd.ZKResponse{Err: err}
+		return ch
+	}
+	s.futures[xid] = ch
+	return ch
+}
+
 // recvLoop forwards responses from the real zk server to the zetcd connection.
 func (s *session) recvLoop() {
-	defer s.cancel()
+	defer func() {
+		for _, ch := range s.futures {
+			close(ch)
+		}
+		s.futures = nil
+		s.cancel()
+	}()
 	for resp := range s.zkc.Read() {
 		if resp.Err != nil {
 			glog.V(6).Infof("zkresp=Err(%v)", resp.Err)
 			return
 		}
 		glog.V(6).Infof("zkresp=(%+v,%+v)", *resp.Hdr, resp.Resp)
+		if ch := s.futures[resp.Hdr.Xid]; ch != nil {
+			ch <- resp
+			delete(s.futures, resp.Hdr.Xid)
+			continue
+		}
+		// out of band requests (i.e., watches)
 		var r interface{}
 		if resp.Hdr.Err != 0 {
 			r = &resp.Hdr.Err

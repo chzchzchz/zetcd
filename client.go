@@ -32,9 +32,13 @@ type Client interface {
 }
 
 type ZKResponse struct {
+	// data to be send back to the proxy's client
+
 	Hdr  *ResponseHeader
 	Resp interface{}
-	Err  error
+
+	// Err is from transmission errors, etc
+	Err error
 }
 
 func NewClient(ctx context.Context, zk net.Conn) Client {

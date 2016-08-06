@@ -25,7 +25,7 @@ func (z *zkEtcd) CloseZK() error {
 	return nil
 }
 
-func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
+func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 	opts := []etcd.OpOption{}
 	switch op.Flags {
 	case 0:
@@ -84,11 +84,11 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 		errResp = errInvalidAcl
 	case nil:
 	default:
-		return err
+		return mkErr(err)
 	}
 
 	if errResp != errOk {
-		return z.s.Send(xid, 0, &errResp)
+		return mkZKErr(xid, 0, errResp)
 	}
 
 	zxid := ZXid(resp.Header.Revision)
@@ -96,22 +96,21 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) error {
 	crResp := &CreateResponse{op.Path}
 
 	glog.V(7).Infof("Create(%v) = (zxid=%v, resp=%+v)", zxid, xid, *crResp)
-	return z.s.Send(xid, zxid, crResp)
+	return mkZKResp(xid, zxid, crResp)
 }
 
-func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
+func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) ZKResponse {
 	resp := &GetChildren2Response{}
 	p := mkPath(op.Path)
 
 	txnresp, err := z.c.Txn(z.c.Ctx()).Then(statGets(p)...).Commit()
 	if err != nil {
-		return err
+		return mkErr(err)
 	}
 
 	resp.Stat = statTxn(txnresp)
 	if len(p) != 2 && resp.Stat.Ctime == 0 {
-		errResp := ErrCode(errNoNode)
-		return z.s.Send(xid, ZXid(txnresp.Header.Revision), &errResp)
+		return mkZKErr(xid, ZXid(txnresp.Header.Revision), errNoNode)
 	}
 
 	children := txnresp.Responses[5].GetResponseRange()
@@ -137,14 +136,14 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) error {
 	}
 
 	glog.V(7).Infof("GetChildren2(%v) = (zxid=%v, resp=%+v)", zxid, xid, *resp)
-	return z.s.Send(xid, zxid, resp)
+	return mkZKResp(xid, zxid, resp)
 }
 
-func (z *zkEtcd) Ping(xid Xid, op *PingRequest) error {
-	return z.s.Send(xid, z.s.ZXid(), &PingResponse{})
+func (z *zkEtcd) Ping(xid Xid, op *PingRequest) ZKResponse {
+	return mkZKResp(xid, z.s.ZXid(), &PingResponse{})
 }
 
-func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
+func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) ZKResponse {
 	p := mkPath(op.Path)
 	pp := mkPath(path.Dir(op.Path))
 	key := "/zk/key/" + p
@@ -186,14 +185,12 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 
 	switch err {
 	case ErrNoNode:
-		errResp := ErrCode(errNoNode)
-		return z.s.Send(xid, 0, &errResp)
+		return mkZKErr(xid, 0, errNoNode)
 	case ErrBadVersion:
-		errResp := ErrCode(errBadVersion)
-		return z.s.Send(xid, 0, &errResp)
+		return mkZKErr(xid, 0, errBadVersion)
 	case nil:
 	default:
-		return err
+		return mkErr(err)
 	}
 
 	delResp := &DeleteResponse{}
@@ -201,15 +198,15 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) error {
 	z.s.Wait(zxid, p, EventNodeDeleted)
 
 	glog.V(7).Infof("Delete(%v) = (zxid=%v, resp=%+v)", xid, zxid, *delResp)
-	return z.s.Send(xid, zxid, delResp)
+	return mkZKResp(xid, zxid, delResp)
 }
 
-func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
+func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) ZKResponse {
 	p := mkPath(op.Path)
 	gets := statGets(p)
 	txnresp, err := z.c.Txn(z.c.Ctx()).Then(gets...).Commit()
 	if err != nil {
-		return err
+		return mkErr(err)
 	}
 
 	exResp := &ExistsResponse{}
@@ -235,27 +232,25 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) error {
 	}
 
 	if exResp.Stat.Mtime == 0 {
-		errResp := ErrCode(errNoNode)
-		return z.s.Send(xid, 0, &errResp)
+		return mkZKErr(xid, 0, errNoNode)
 	}
 
 	glog.V(7).Infof("Exists(%v) = (zxid=%v, resp=%+v)", xid, zxid, *exResp)
-	return z.s.Send(xid, zxid, exResp)
+	return mkZKResp(xid, zxid, exResp)
 }
 
-func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
+func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) ZKResponse {
 	p := mkPath(op.Path)
 	gets := statGets(p)
 	txnresp, err := z.c.Txn(z.c.Ctx()).Then(gets...).Commit()
 	if err != nil {
-		return err
+		return mkErr(err)
 	}
 
 	datResp := &GetDataResponse{}
 	datResp.Stat = statTxn(txnresp)
 	if datResp.Stat.Mtime == 0 {
-		errResp := ErrCode(errNoNode)
-		return z.s.Send(xid, 0, &errResp)
+		return mkZKErr(xid, 0, errNoNode)
 	}
 
 	zxid := ZXid(txnresp.Header.Revision)
@@ -276,10 +271,10 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) error {
 	datResp.Data = []byte(txnresp.Responses[2].GetResponseRange().Kvs[0].Value)
 
 	glog.V(7).Infof("GetData(%v) = (zxid=%v, resp=%+v)", xid, zxid, *datResp)
-	return z.s.Send(xid, zxid, datResp)
+	return mkZKResp(xid, zxid, datResp)
 }
 
-func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) error {
+func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) ZKResponse {
 	p := mkPath(op.Path)
 	var statResp etcd.TxnResponse
 	applyf := func(s v3sync.STM) error {
@@ -307,13 +302,11 @@ func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) error {
 	switch err {
 	case nil:
 	case ErrNoNode:
-		errResp := ErrCode(errNoNode)
-		return z.s.Send(xid, 0, &errResp)
+		return mkZKErr(xid, 0, errNoNode)
 	case ErrBadVersion:
-		errResp := ErrCode(errBadVersion)
-		return z.s.Send(xid, 0, &errResp)
+		return mkZKErr(xid, 0, errBadVersion)
 	default:
-		return nil
+		return mkZKErr(xid, 0, errAPIError)
 	}
 
 	sdresp := &SetDataResponse{}
@@ -321,10 +314,10 @@ func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) error {
 	zxid := ZXid(resp.Header.Revision)
 
 	glog.V(7).Infof("SetData(%v) = (zxid=%v, resp=%+v)", xid, zxid, *sdresp)
-	return z.s.Send(xid, zxid, sdresp)
+	return mkZKResp(xid, zxid, sdresp)
 }
 
-func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) error {
+func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) ZKResponse {
 	resp := &GetAclResponse{}
 	p := mkPath(op.Path)
 
@@ -332,35 +325,33 @@ func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) error {
 	gets = append(gets, statGets(p)...)
 	txnresp, err := z.c.Txn(z.c.Ctx()).Then(gets...).Commit()
 	if err != nil {
-		return err
+		return mkErr(err)
 	}
 	resps := txnresp.Responses
 	txnresp.Responses = resps[1:]
 	resp.Stat = statTxn(txnresp)
 	if resp.Stat.Ctime == 0 {
-		errResp := ErrCode(errNoNode)
-		return z.s.Send(xid, 0, &errResp)
+		return mkZKErr(xid, 0, errNoNode)
 	}
 	resp.Acl = decodeACLs(resps[0].GetResponseRange().Kvs[0].Value)
 	zxid := ZXid(txnresp.Header.Revision)
 
 	glog.V(7).Infof("GetAcl(%v) = (zxid=%v, resp=%+v)", xid, zxid, *resp)
-	return z.s.Send(xid, zxid, resp)
+	return mkZKResp(xid, zxid, resp)
 }
 
-func (z *zkEtcd) SetAcl(xid Xid, op *SetAclRequest) error { panic("setAcl") }
+func (z *zkEtcd) SetAcl(xid Xid, op *SetAclRequest) ZKResponse { panic("setAcl") }
 
-func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
+func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) ZKResponse {
 	p := mkPath(op.Path)
 	txnresp, err := z.c.Txn(z.c.Ctx()).Then(statGets(p)...).Commit()
 	if err != nil {
-		return err
+		return mkErr(err)
 	}
 
 	s := statTxn(txnresp)
 	if len(p) != 2 && s.Ctime == 0 {
-		errResp := ErrCode(errNoNode)
-		return z.s.Send(xid, ZXid(txnresp.Header.Revision), &errResp)
+		return mkZKErr(xid, ZXid(txnresp.Header.Revision), errNoNode)
 	}
 
 	children := txnresp.Responses[5].GetResponseRange()
@@ -385,36 +376,34 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) error {
 	}
 
 	glog.V(7).Infof("GetChildren(%v) = (zxid=%v, resp=%+v)", xid, zxid, *resp)
-	return z.s.Send(xid, zxid, resp)
+	return mkZKResp(xid, zxid, resp)
 }
 
-func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) error {
+func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) ZKResponse {
 	// linearized read
 	resp, err := z.c.Get(z.c.Ctx(), "/zk/ver/"+mkPath(op.Path))
 	if err != nil {
-		return err
+		return mkErr(err)
 	}
 	if len(resp.Kvs) == 0 {
-		errResp := ErrCode(errNoNode)
-		return z.s.Send(xid, 0, &errResp)
+		return mkZKErr(xid, 0, errNoNode)
 	}
 
 	zxid := ZXid(resp.Header.Revision)
 	glog.V(7).Infof("Sync(%v) = (zxid=%v, resp=%+v)", xid, zxid, *resp)
-	return z.s.Send(xid, zxid, &CreateResponse{op.Path})
+	return mkZKResp(xid, zxid, &CreateResponse{op.Path})
 }
 
-func (z *zkEtcd) Multi(xid Xid, op *MultiRequest) error { panic("multi") }
+func (z *zkEtcd) Multi(xid Xid, op *MultiRequest) ZKResponse { panic("multi") }
 
-func (z *zkEtcd) Close(xid Xid, op *CloseRequest) error {
+func (z *zkEtcd) Close(xid Xid, op *CloseRequest) ZKResponse {
 	// XXX this needs to kill the internal session
-	z.s.Send(xid, 0, &CloseResponse{})
-	return ErrConnectionClosed
+	return mkZKResp(xid, 0, &CloseResponse{})
 }
 
-func (z *zkEtcd) SetAuth(xid Xid, op *SetAuthRequest) error { panic("setAuth") }
+func (z *zkEtcd) SetAuth(xid Xid, op *SetAuthRequest) ZKResponse { panic("setAuth") }
 
-func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
+func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) ZKResponse {
 	for _, dw := range op.DataWatches {
 		dataPath := dw
 		p := mkPath(dataPath)
@@ -440,7 +429,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
 
 	resp, err := z.c.Txn(z.c.Ctx()).Then(ops...).Commit()
 	if err != nil {
-		return err
+		return mkErr(err)
 	}
 	curZXid := ZXid(resp.Header.Revision)
 
@@ -481,7 +470,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) error {
 	swresp := &SetWatchesResponse{}
 
 	glog.V(7).Infof("SetWatches(%v) = (zxid=%v, resp=%+v)", xid, curZXid, *swresp)
-	return z.s.Send(xid, curZXid, swresp)
+	return mkZKResp(xid, curZXid, swresp)
 }
 
 func encodeACLs(acls []ACL) string {
@@ -506,4 +495,14 @@ func decodeInt64(v []byte) int64 { x, _ := binary.Varint(v); return x }
 func encodeInt64(v int64) string {
 	b := make([]byte, binary.MaxVarintLen64)
 	return string(b[:binary.PutVarint(b, v)])
+}
+
+func mkErr(err error) ZKResponse { return ZKResponse{Err: err} }
+
+func mkZKErr(xid Xid, zxid ZXid, err ErrCode) ZKResponse {
+	return ZKResponse{Hdr: &ResponseHeader{xid, 0, err}}
+}
+
+func mkZKResp(xid Xid, zxid ZXid, resp interface{}) ZKResponse {
+	return ZKResponse{Hdr: &ResponseHeader{xid, zxid, 0}, Resp: resp}
 }
