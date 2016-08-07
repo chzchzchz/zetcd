@@ -73,10 +73,10 @@ func (xchk *zkXchk) Exists(xid zetcd.Xid, op *zetcd.ExistsRequest) zetcd.ZKRespo
 	of := func() zetcd.ZKResponse { return xchk.oZK.Exists(xid, op) }
 	cr, or, err := xchkResp(cf, of)
 	defer func() { reportErr(cr, or, err) }()
-	crr, orr := cr.Resp.(*zetcd.ExistsResponse), or.Resp.(*zetcd.ExistsResponse)
 	if err != nil || or.Resp == nil {
 		return or
 	}
+	crr, orr := cr.Resp.(*zetcd.ExistsResponse), or.Resp.(*zetcd.ExistsResponse)
 
 	if crr.Stat != orr.Stat {
 		err = errStat
@@ -89,10 +89,10 @@ func (xchk *zkXchk) GetData(xid zetcd.Xid, op *zetcd.GetDataRequest) zetcd.ZKRes
 	of := func() zetcd.ZKResponse { return xchk.oZK.GetData(xid, op) }
 	cr, or, err := xchkResp(cf, of)
 	defer func() { reportErr(cr, or, err) }()
-	crr, orr := cr.Resp.(*zetcd.GetDataResponse), or.Resp.(*zetcd.GetDataResponse)
 	if err != nil || or.Resp == nil {
 		return or
 	}
+	crr, orr := cr.Resp.(*zetcd.GetDataResponse), or.Resp.(*zetcd.GetDataResponse)
 
 	if bytes.Compare(crr.Data, orr.Data) != 0 {
 		err = errData
@@ -108,10 +108,10 @@ func (xchk *zkXchk) SetData(xid zetcd.Xid, op *zetcd.SetDataRequest) zetcd.ZKRes
 	of := func() zetcd.ZKResponse { return xchk.oZK.SetData(xid, op) }
 	cr, or, err := xchkResp(cf, of)
 	defer func() { reportErr(cr, or, err) }()
-	crr, orr := cr.Resp.(*zetcd.SetDataResponse), or.Resp.(*zetcd.SetDataResponse)
 	if err != nil || or.Resp == nil {
 		return or
 	}
+	crr, orr := cr.Resp.(*zetcd.SetDataResponse), or.Resp.(*zetcd.SetDataResponse)
 
 	if crr.Stat != orr.Stat {
 		err = errStat
@@ -124,10 +124,10 @@ func (xchk *zkXchk) GetAcl(xid zetcd.Xid, op *zetcd.GetAclRequest) zetcd.ZKRespo
 	of := func() zetcd.ZKResponse { return xchk.oZK.GetAcl(xid, op) }
 	cr, or, err := xchkResp(cf, of)
 	defer func() { reportErr(cr, or, err) }()
-	crr, orr := cr.Resp.(*zetcd.GetAclResponse), or.Resp.(*zetcd.GetAclResponse)
 	if err != nil || or.Resp == nil {
 		return or
 	}
+	crr, orr := cr.Resp.(*zetcd.GetAclResponse), or.Resp.(*zetcd.GetAclResponse)
 
 	if len(crr.Acl) != len(orr.Acl) {
 		err = errNumAcl
@@ -153,10 +153,10 @@ func (xchk *zkXchk) SetAcl(xid zetcd.Xid, op *zetcd.SetAclRequest) zetcd.ZKRespo
 	of := func() zetcd.ZKResponse { return xchk.oZK.SetAcl(xid, op) }
 	cr, or, err := xchkResp(cf, of)
 	defer func() { reportErr(cr, or, err) }()
-	crr, orr := cr.Resp.(*zetcd.SetAclResponse), or.Resp.(*zetcd.SetAclResponse)
 	if err != nil || or.Resp == nil {
 		return or
 	}
+	crr, orr := cr.Resp.(*zetcd.SetAclResponse), or.Resp.(*zetcd.SetAclResponse)
 
 	if crr.Stat != orr.Stat {
 		err = errStat
@@ -170,10 +170,10 @@ func (xchk *zkXchk) GetChildren(xid zetcd.Xid, op *zetcd.GetChildrenRequest) zet
 	of := func() zetcd.ZKResponse { return xchk.oZK.GetChildren(xid, op) }
 	cr, or, err := xchkResp(cf, of)
 	defer func() { reportErr(cr, or, err) }()
-	crr, orr := cr.Resp.(*zetcd.GetChildrenResponse), or.Resp.(*zetcd.GetChildrenResponse)
 	if err != nil || or.Resp == nil {
 		return or
 	}
+	crr, orr := cr.Resp.(*zetcd.GetChildrenResponse), or.Resp.(*zetcd.GetChildrenResponse)
 
 	if len(crr.Children) != len(orr.Children) {
 		err = errNumChildren
