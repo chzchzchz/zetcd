@@ -14,7 +14,7 @@ var (
 	errAcl         = fmt.Errorf("acl mismatch")
 	errNumAcl      = fmt.Errorf("acl length mismatch")
 	errPath        = fmt.Errorf("path mismatch")
-	errErr         = fmt.Errorf("err mismtach")
+	errErr         = fmt.Errorf("err mismatch")
 	errNumChildren = fmt.Errorf("number of children mismatch")
 	errChildren    = fmt.Errorf("children paths mismatch")
 )
@@ -269,6 +269,9 @@ func xchkErr(cresp, oresp zetcd.ZKResponse) bool {
 	if cresp.Err != nil || oresp.Err != nil {
 		return false
 	}
+	if cresp.Hdr == nil || oresp.Hdr == nil {
+		return false
+	}
 	if cresp.Hdr.Err != oresp.Hdr.Err {
 		return false
 	}
@@ -296,5 +299,7 @@ func reportErr(cr, or zetcd.ZKResponse, err error) {
 		glog.Warningf("xchk failed (%v)\ncandiate: %+v\noracle: %+v\n", err, cr.Resp, or.Resp)
 	case cr.Hdr != nil && or.Hdr != nil:
 		glog.Warningf("xchk failed (%v)\ncandidate: %+v\noracle: %+v\n", err, cr.Hdr, or.Hdr)
+	default:
+		glog.Warningf("xchk failed (%v)\ncandidate: %+v\noracle: %+v", err, cr, or)
 	}
 }
