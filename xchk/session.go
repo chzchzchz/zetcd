@@ -2,9 +2,40 @@ package xchk
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/chzchzchz/zetcd"
 )
+
+type sessCreds struct {
+	sid  zetcd.Sid
+	pass []byte
+}
+
+type sessionPool struct {
+	mu sync.Mutex
+	// o2cSid maps oracle sids to candidate sids
+	o2cSid map[zetcd.Sid]sessCreds
+}
+
+func (sp *sessionPool) get(sid zetcd.Sid) (zetcd.Sid, []byte) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	if sc, ok := sp.o2cSid[sid]; ok {
+		return sc.sid, sc.pass
+	}
+	return 0, nil
+}
+
+func (sp *sessionPool) put(osid, csid zetcd.Sid, pwd []byte) {
+	sp.mu.Lock()
+	sp.o2cSid[osid] = sessCreds{csid, pwd}
+	sp.mu.Unlock()
+}
+
+func newSessionPool() *sessionPool {
+	return &sessionPool{o2cSid: make(map[zetcd.Sid]sessCreds)}
+}
 
 // session intercepts Sends so responses can be xchked
 type session struct {
@@ -14,7 +45,7 @@ type session struct {
 	req       zetcd.ConnectRequest
 }
 
-func Auth(zka zetcd.AuthConn, cAuth, oAuth zetcd.AuthFunc) (zetcd.Session, error) {
+func Auth(sp *sessionPool, zka zetcd.AuthConn, cAuth, oAuth zetcd.AuthFunc) (zetcd.Session, error) {
 	xzka := newAuthConn(zka)
 	defer xzka.Close()
 
@@ -33,12 +64,36 @@ func Auth(zka zetcd.AuthConn, cAuth, oAuth zetcd.AuthFunc) (zetcd.Session, error
 		cerrc <- cerr
 	}()
 
+	// get client request
 	ar, arerr := xzka.Read()
 	if arerr != nil {
 		return nil, arerr
 	}
 
-	xzkc, xerr := xzka.Write(zetcd.AuthResponse{})
+	// send to oracle as usual
+	ozka.reqc <- ar
+
+	// send to candidate patched with right session info
+	creq := *ar.Req
+	if creq.SessionID != 0 {
+		creq.SessionID, creq.Passwd = sp.get(creq.SessionID)
+	}
+	czka.reqc <- &zetcd.AuthRequest{Req: &creq}
+
+	oresp, cresp := <-ozka.respc, <-czka.respc
+	vNil := oresp == nil && cresp == nil
+	vVal := oresp != nil && cresp != nil
+	if !vNil && !vVal {
+		return nil, fmt.Errorf("mismatch %+v vs %+v", oresp, cresp)
+	}
+	if oresp == nil {
+		return nil, fmt.Errorf("bad oracle response")
+	}
+
+	// save session info in case of resume
+	sp.put(oresp.Resp.SessionID, cresp.Resp.SessionID, cresp.Resp.Passwd)
+
+	xzkc, xerr := xzka.Write(zetcd.AuthResponse{oresp.Resp})
 	oerr, cerr := <-oerrc, <-cerrc
 	if xerr != nil || cerr != nil || oerr != nil {
 		return nil, fmt.Errorf("err: xchk: %v. oracle: %v. candidate: %v", oerr, cerr)

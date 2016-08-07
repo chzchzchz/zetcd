@@ -8,8 +8,9 @@ import (
 
 // NewAuth takes a candidate AuthFunc and an oracle AuthFunc
 func NewAuth(cAuth, oAuth zetcd.AuthFunc) zetcd.AuthFunc {
+	sp := newSessionPool()
 	return func(zka zetcd.AuthConn) (zetcd.Session, error) {
-		return Auth(zka, cAuth, oAuth)
+		return Auth(sp, zka, cAuth, oAuth)
 	}
 }
 
