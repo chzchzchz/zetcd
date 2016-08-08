@@ -29,11 +29,12 @@ func statTxn(txnresp *etcd.TxnResponse) (s Stat) {
 	if len(ctime.Kvs) != 0 {
 		s.Ctime = decodeInt64(ctime.Kvs[0].Value)
 		s.Czxid = ZXid(ctime.Kvs[0].ModRevision)
+		s.Pzxid = s.Czxid
 	}
 	if len(mtime.Kvs) != 0 {
 		s.Mzxid = ZXid(mtime.Kvs[0].ModRevision)
 		s.Mtime = decodeInt64(mtime.Kvs[0].Value)
-		s.Version = Ver(mtime.Kvs[0].Version)
+		s.Version = Ver(mtime.Kvs[0].Version - 1)
 	}
 	if len(cver.Kvs) != 0 {
 		s.Cversion = Ver(decodeInt64(cver.Kvs[0].Value))
