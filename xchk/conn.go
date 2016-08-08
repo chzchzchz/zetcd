@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/chzchzchz/zetcd"
+	"github.com/golang/glog"
 )
 
 // conn implements a Conn that xchks several conns
@@ -39,31 +40,13 @@ func newConn(zkc zetcd.Conn, nworkers int) (*conn, []zetcd.Conn) {
 		workers[i] = c.workers[i]
 	}
 
-	// dispatch reads to workers
-	go c.readLoop()
 	// collect sends from workers
 	go c.sendLoop()
 	return c, workers
 }
 
-func (c *conn) readLoop() {
-	defer func() {
-		close(c.donec)
-		close(c.readc)
-	}()
-	for req := range c.zkc.Read() {
-		for _, w := range c.workers {
-			select {
-			case w.readc <- req:
-			case <-c.stopc:
-				return
-			}
-		}
-		c.readc <- req
-	}
-}
-
 func (c *conn) sendLoop() {
+	// catch OOB messages from servers, propagate back to client on dupe
 	for {
 		var sp sendPkt
 		select {
@@ -71,15 +54,16 @@ func (c *conn) sendLoop() {
 		case <-c.stopc:
 			return
 		}
-		fmt.Printf("%+v %+v\n", sp, sp.resp)
+		glog.V(7).Infof("XchkSendLoop: %+v", sp)
 	}
 }
 
 func (c *conn) Send(xid zetcd.Xid, zxid zetcd.ZXid, resp interface{}) error {
+	glog.V(6).Infof("sendXchk Xid:%v ZXid:%v Resp:%+v", xid, zxid, resp)
 	return c.zkc.Send(xid, zxid, resp)
 }
 
-func (c *conn) Read() <-chan zetcd.ZKRequest { return c.readc }
+func (c *conn) Read() <-chan zetcd.ZKRequest { return c.zkc.Read() }
 func (c *conn) StopNotify() <-chan struct{}  { return c.stopc }
 
 func (c *conn) Close() {
@@ -101,6 +85,7 @@ type sendPkt struct {
 }
 
 func (c *connWorker) Send(xid zetcd.Xid, zxid zetcd.ZXid, resp interface{}) error {
+	glog.V(7).Infof("connWorkerSend(%v,%v,%+v)", xid, zxid, resp)
 	select {
 	case c.parent.sendc <- sendPkt{xid, zxid, resp}:
 	case <-c.stopc:
