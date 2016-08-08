@@ -15,6 +15,7 @@ var (
 	errNumAcl      = fmt.Errorf("acl length mismatch")
 	errPath        = fmt.Errorf("path mismatch")
 	errErr         = fmt.Errorf("err mismatch")
+	errZXid        = fmt.Errorf("zxid mismatch")
 	errNumChildren = fmt.Errorf("number of children mismatch")
 	errChildren    = fmt.Errorf("children paths mismatch")
 )
@@ -78,7 +79,7 @@ func (xchk *zkXchk) Exists(xid zetcd.Xid, op *zetcd.ExistsRequest) zetcd.ZKRespo
 	}
 	crr, orr := cr.Resp.(*zetcd.ExistsResponse), or.Resp.(*zetcd.ExistsResponse)
 
-	if crr.Stat != orr.Stat {
+	if !xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 	return or
@@ -97,7 +98,7 @@ func (xchk *zkXchk) GetData(xid zetcd.Xid, op *zetcd.GetDataRequest) zetcd.ZKRes
 	if bytes.Compare(crr.Data, orr.Data) != 0 {
 		err = errData
 	}
-	if crr.Stat != orr.Stat {
+	if !xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 	return or
@@ -113,7 +114,7 @@ func (xchk *zkXchk) SetData(xid zetcd.Xid, op *zetcd.SetDataRequest) zetcd.ZKRes
 	}
 	crr, orr := cr.Resp.(*zetcd.SetDataResponse), or.Resp.(*zetcd.SetDataResponse)
 
-	if crr.Stat != orr.Stat {
+	if !xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 	return or
@@ -141,7 +142,7 @@ func (xchk *zkXchk) GetAcl(xid zetcd.Xid, op *zetcd.GetAclRequest) zetcd.ZKRespo
 		}
 	}
 
-	if crr.Stat != orr.Stat {
+	if !xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 
@@ -158,7 +159,7 @@ func (xchk *zkXchk) SetAcl(xid zetcd.Xid, op *zetcd.SetAclRequest) zetcd.ZKRespo
 	}
 	crr, orr := cr.Resp.(*zetcd.SetAclResponse), or.Resp.(*zetcd.SetAclResponse)
 
-	if crr.Stat != orr.Stat {
+	if !xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 
@@ -231,7 +232,7 @@ func (xchk *zkXchk) GetChildren2(xid zetcd.Xid, op *zetcd.GetChildren2Request) z
 			return or
 		}
 	}
-	if crr.Stat != orr.Stat {
+	if !xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 	return or
@@ -265,17 +266,20 @@ func (xchk *zkXchk) SetWatches(xid zetcd.Xid, op *zetcd.SetWatchesRequest) zetcd
 
 type zkfunc func() zetcd.ZKResponse
 
-func xchkErr(cresp, oresp zetcd.ZKResponse) bool {
+func xchkHdr(cresp, oresp zetcd.ZKResponse) error {
 	if cresp.Err != nil || oresp.Err != nil {
-		return false
+		return errErr
 	}
 	if cresp.Hdr == nil || oresp.Hdr == nil {
-		return false
+		return errErr
 	}
 	if cresp.Hdr.Err != oresp.Hdr.Err {
-		return false
+		return errErr
 	}
-	return true
+	if cresp.Hdr.Zxid != oresp.Hdr.Zxid {
+		return errZXid
+	}
+	return nil
 }
 
 func xchkResp(cf, of zkfunc) (cresp zetcd.ZKResponse, oresp zetcd.ZKResponse, err error) {
@@ -283,11 +287,7 @@ func xchkResp(cf, of zkfunc) (cresp zetcd.ZKResponse, oresp zetcd.ZKResponse, er
 	go func() { cch <- cf() }()
 	go func() { och <- of() }()
 	cresp, oresp = <-cch, <-och
-	if !xchkErr(cresp, oresp) {
-		err = errErr
-		return
-	}
-	return
+	return cresp, oresp, xchkHdr(cresp, oresp)
 }
 
 func reportErr(cr, or zetcd.ZKResponse, err error) {
@@ -295,6 +295,8 @@ func reportErr(cr, or zetcd.ZKResponse, err error) {
 		return
 	}
 	switch {
+	case err == errErr || err == errZXid:
+		glog.Warningf("xchk failed (%v)\ncandidate: %+v\noracle: %+v\n", err, cr.Hdr, or.Hdr)
 	case cr.Resp != nil && or.Resp != nil:
 		glog.Warningf("xchk failed (%v)\ncandiate: %+v\noracle: %+v\n", err, cr.Resp, or.Resp)
 	case cr.Hdr != nil && or.Hdr != nil:
@@ -302,4 +304,15 @@ func reportErr(cr, or zetcd.ZKResponse, err error) {
 	default:
 		glog.Warningf("xchk failed (%v)\ncandidate: %+v\noracle: %+v", err, cr, or)
 	}
+}
+
+func xchkStat(s1, s2 zetcd.Stat) bool {
+	tdiff1, tdiff2 := s1.Ctime-s1.Mtime, s2.Ctime-s2.Mtime
+	if tdiff1 != tdiff2 && tdiff1 == 0 {
+		// expect equal times to be equal
+		return false
+	}
+	// times will never be equivalent, so fake it
+	s1.Ctime, s1.Mtime = s2.Ctime, s2.Mtime
+	return s1 == s2
 }
