@@ -18,6 +18,9 @@ type zkEtcd struct {
 	s Session
 }
 
+// PerfectZXid is enabled to insert dummy writes to match zookeeper's zxids
+var PerfectZXidMode bool = true
+
 func NewZKEtcd(c *etcd.Client, s Session) ZK { return &zkEtcd{c, s} }
 
 func (z *zkEtcd) CloseZK() error {
@@ -47,6 +50,9 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 		}
 		if s.Rev(pkey) == 0 && len(pp) != 2 {
 			// no parent
+			if PerfectZXidMode {
+				s.Put("/zk/moron-node", "1")
+			}
 			return ErrNoNode
 		}
 		if s.Rev("/zk/ver/"+p) != 0 {
@@ -70,28 +76,27 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 		return nil
 	}
 
-	resp, err := v3sync.NewSTMSerializable(z.c.Ctx(), z.c, applyf)
-	errResp := errOk
-	// XXX do I need valid zxid on errors?
-	switch err {
-	case ErrNoNode:
-		// parent missing
-		errResp = errNoNode
-	case ErrNodeExists:
-		// this key already exists
-		errResp = errNodeExists
-	case ErrInvalidACL:
-		errResp = errInvalidAcl
-	case nil:
-	default:
+	var apiErr error
+	resp, err := z.doSTM(wrapErr(&apiErr, applyf))
+	if err != nil {
 		return mkErr(err)
 	}
 
-	if errResp != errOk {
-		return mkZKErr(xid, 0, errResp)
+	zxid := ZXid(resp.Header.Revision)
+	switch apiErr {
+	case nil:
+	case ErrNoNode:
+		// parent missing
+		return mkZKErr(xid, zxid, errNoNode)
+	case ErrNodeExists:
+		// this key already exists
+		return mkZKErr(xid, zxid, errNodeExists)
+	case ErrInvalidACL:
+		return mkZKErr(xid, zxid, errInvalidAcl)
+	default:
+		return mkZKErr(xid, zxid, errAPIError)
 	}
 
-	zxid := ZXid(resp.Header.Revision)
 	z.s.Wait(zxid, p, EventNodeCreated)
 	crResp := &CreateResponse{op.Path}
 
@@ -152,9 +157,15 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) ZKResponse {
 	applyf := func(s v3sync.STM) error {
 		if s.Rev(pkey) == 0 && len(pp) != 2 {
 			// no parent
+			if PerfectZXidMode {
+				s.Put("/zk/moron-node", "1")
+			}
 			return ErrNoNode
 		}
 		if s.Rev("/zk/ver/"+p) == 0 {
+			if PerfectZXidMode {
+				s.Put("/zk/moron-node", "1")
+			}
 			return ErrNoNode
 		}
 		ver := Ver(decodeInt64([]byte(s.Get("/zk/ver/" + p))))
@@ -181,20 +192,24 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) ZKResponse {
 		return nil
 	}
 
-	resp, err := v3sync.NewSTMSerializable(z.c.Ctx(), z.c, applyf)
-
-	switch err {
-	case ErrNoNode:
-		return mkZKErr(xid, 0, errNoNode)
-	case ErrBadVersion:
-		return mkZKErr(xid, 0, errBadVersion)
-	case nil:
-	default:
+	var apiErr error
+	resp, err := z.doSTM(wrapErr(&apiErr, applyf))
+	if err != nil {
 		return mkErr(err)
 	}
 
-	delResp := &DeleteResponse{}
 	zxid := ZXid(resp.Header.Revision)
+	switch apiErr {
+	case nil:
+	case ErrNoNode:
+		return mkZKErr(xid, zxid, errNoNode)
+	case ErrBadVersion:
+		return mkZKErr(xid, zxid, errBadVersion)
+	default:
+		return mkZKErr(xid, zxid, errAPIError)
+	}
+
+	delResp := &DeleteResponse{}
 	z.s.Wait(zxid, p, EventNodeDeleted)
 
 	glog.V(7).Infof("Delete(%v) = (zxid=%v, resp=%+v)", xid, zxid, *delResp)
@@ -232,7 +247,7 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) ZKResponse {
 	}
 
 	if exResp.Stat.Mtime == 0 {
-		return mkZKErr(xid, 0, errNoNode)
+		return mkZKErr(xid, zxid, errNoNode)
 	}
 
 	glog.V(7).Infof("Exists(%v) = (zxid=%v, resp=%+v)", xid, zxid, *exResp)
@@ -247,13 +262,14 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) ZKResponse {
 		return mkErr(err)
 	}
 
+	zxid := ZXid(txnresp.Header.Revision)
+
 	datResp := &GetDataResponse{}
 	datResp.Stat = statTxn(txnresp)
 	if datResp.Stat.Mtime == 0 {
-		return mkZKErr(xid, 0, errNoNode)
+		return mkZKErr(xid, zxid, errNoNode)
 	}
 
-	zxid := ZXid(txnresp.Header.Revision)
 	z.s.Wait(zxid, p, EventNodeDataChanged)
 
 	if op.Watch {
@@ -279,6 +295,9 @@ func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) ZKResponse {
 	var statResp etcd.TxnResponse
 	applyf := func(s v3sync.STM) error {
 		if s.Rev("/zk/ver/"+p) == 0 {
+			if PerfectZXidMode {
+				s.Put("/zk/moron-node", "2")
+			}
 			return ErrNoNode
 		}
 		currentVersion := Ver(decodeInt64([]byte(s.Get("/zk/ver/" + p))))
@@ -297,21 +316,25 @@ func (z *zkEtcd) SetData(xid Xid, op *SetDataRequest) ZKResponse {
 		statResp = *resp
 		return nil
 	}
-	resp, err := v3sync.NewSTMSerializable(z.c.Ctx(), z.c, applyf)
+	var apiErr error
+	resp, err := z.doSTM(wrapErr(&apiErr, applyf))
+	if err != nil {
+		return mkErr(err)
+	}
 
-	switch err {
+	zxid := ZXid(resp.Header.Revision)
+	switch apiErr {
 	case nil:
 	case ErrNoNode:
-		return mkZKErr(xid, 0, errNoNode)
+		return mkZKErr(xid, zxid, errNoNode)
 	case ErrBadVersion:
-		return mkZKErr(xid, 0, errBadVersion)
+		return mkZKErr(xid, zxid, errBadVersion)
 	default:
-		return mkZKErr(xid, 0, errAPIError)
+		return mkZKErr(xid, zxid, errAPIError)
 	}
 
 	sdresp := &SetDataResponse{}
 	sdresp.Stat = statTxn(&statResp)
-	zxid := ZXid(resp.Header.Revision)
 
 	glog.V(7).Infof("SetData(%v) = (zxid=%v, resp=%+v)", xid, zxid, *sdresp)
 	return mkZKResp(xid, zxid, sdresp)
@@ -327,14 +350,15 @@ func (z *zkEtcd) GetAcl(xid Xid, op *GetAclRequest) ZKResponse {
 	if err != nil {
 		return mkErr(err)
 	}
+
+	zxid := ZXid(txnresp.Header.Revision)
 	resps := txnresp.Responses
 	txnresp.Responses = resps[1:]
 	resp.Stat = statTxn(txnresp)
 	if resp.Stat.Ctime == 0 {
-		return mkZKErr(xid, 0, errNoNode)
+		return mkZKErr(xid, zxid, errNoNode)
 	}
 	resp.Acl = decodeACLs(resps[0].GetResponseRange().Kvs[0].Value)
-	zxid := ZXid(txnresp.Header.Revision)
 
 	glog.V(7).Infof("GetAcl(%v) = (zxid=%v, resp=%+v)", xid, zxid, *resp)
 	return mkZKResp(xid, zxid, resp)
@@ -385,11 +409,12 @@ func (z *zkEtcd) Sync(xid Xid, op *SyncRequest) ZKResponse {
 	if err != nil {
 		return mkErr(err)
 	}
-	if len(resp.Kvs) == 0 {
-		return mkZKErr(xid, 0, errNoNode)
-	}
 
 	zxid := ZXid(resp.Header.Revision)
+	if len(resp.Kvs) == 0 {
+		return mkZKErr(xid, zxid, errNoNode)
+	}
+
 	glog.V(7).Infof("Sync(%v) = (zxid=%v, resp=%+v)", xid, zxid, *resp)
 	return mkZKResp(xid, zxid, &CreateResponse{op.Path})
 }
@@ -473,6 +498,10 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) ZKResponse {
 	return mkZKResp(xid, curZXid, swresp)
 }
 
+func (z *zkEtcd) doSTM(applyf func(s v3sync.STM) error) (*etcd.TxnResponse, error) {
+	return v3sync.NewSTMSerializable(z.c.Ctx(), z.c, applyf)
+}
+
 func encodeACLs(acls []ACL) string {
 	var b bytes.Buffer
 	gob.NewEncoder(&b).Encode(acls)
@@ -500,9 +529,19 @@ func encodeInt64(v int64) string {
 func mkErr(err error) ZKResponse { return ZKResponse{Err: err} }
 
 func mkZKErr(xid Xid, zxid ZXid, err ErrCode) ZKResponse {
-	return ZKResponse{Hdr: &ResponseHeader{xid, 0, err}}
+	return ZKResponse{Hdr: &ResponseHeader{xid, zxid, err}}
 }
 
 func mkZKResp(xid Xid, zxid ZXid, resp interface{}) ZKResponse {
 	return ZKResponse{Hdr: &ResponseHeader{xid, zxid, 0}, Resp: resp}
+}
+
+// wrapErr is to pass back error info but still get the txn response
+func wrapErr(err *error, f func(s v3sync.STM) error) func(s v3sync.STM) error {
+	return func(s v3sync.STM) error {
+		if ferr := f(s); ferr != nil {
+			*err = ferr
+		}
+		return nil
+	}
 }
