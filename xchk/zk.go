@@ -3,6 +3,7 @@ package xchk
 import (
 	"bytes"
 	"fmt"
+	"time"
 
 	"github.com/chzchzchz/zetcd"
 	"github.com/golang/glog"
@@ -286,7 +287,20 @@ func xchkResp(cf, of zkfunc) (cresp zetcd.ZKResponse, oresp zetcd.ZKResponse, er
 	cch, och := make(chan zetcd.ZKResponse, 1), make(chan zetcd.ZKResponse, 1)
 	go func() { cch <- cf() }()
 	go func() { och <- of() }()
-	cresp, oresp = <-cch, <-och
+	select {
+	case cresp = <-cch:
+	case oresp = <-och:
+	}
+	select {
+	case cresp = <-cch:
+	case oresp = <-och:
+	case <-time.After(time.Second):
+		glog.Warningf("took longer than 1s reading second resp %+v %+v", cresp, oresp)
+		select {
+		case cresp = <-cch:
+		case oresp = <-och:
+		}
+	}
 	return cresp, oresp, xchkHdr(cresp, oresp)
 }
 
