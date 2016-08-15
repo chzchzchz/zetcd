@@ -135,7 +135,7 @@ func (z *zkEtcd) GetChildren2(xid Xid, op *GetChildren2Request) ZKResponse {
 				Path:  op.Path,
 			}
 			glog.V(7).Infof("WatchChild (%v,%v,%+v)", xid, newzxid, *wresp)
-			z.s.Send(xid, newzxid, wresp)
+			z.s.Send(-1, -1, wresp)
 		}
 		z.s.Watch(zxid, xid, p, EventNodeChildrenChanged, f)
 	}
@@ -241,7 +241,7 @@ func (z *zkEtcd) Exists(xid Xid, op *ExistsRequest) ZKResponse {
 				Path:  op.Path,
 			}
 			glog.V(7).Infof("WatchExists (%v,%v,%+v)", xid, newzxid, *wresp)
-			z.s.Send(xid, newzxid, wresp)
+			z.s.Send(-1, -1, wresp)
 		}
 		z.s.Watch(zxid, xid, p, ev, f)
 	}
@@ -280,7 +280,7 @@ func (z *zkEtcd) GetData(xid Xid, op *GetDataRequest) ZKResponse {
 				Path:  op.Path,
 			}
 			glog.V(7).Infof("WatchData (%v,%v,%+v)", xid, newzxid, *wresp)
-			z.s.Send(xid, newzxid, wresp)
+			z.s.Send(-1, -1, wresp)
 		}
 		z.s.Watch(zxid, xid, p, EventNodeDataChanged, f)
 	}
@@ -394,7 +394,7 @@ func (z *zkEtcd) GetChildren(xid Xid, op *GetChildrenRequest) ZKResponse {
 				Path:  op.Path,
 			}
 			glog.V(7).Infof("WatchChild (%v,%v,%+v)", xid, newzxid, *wresp)
-			z.s.Send(xid, newzxid, wresp)
+			z.s.Send(-1, -1, wresp)
 		}
 		z.s.Watch(zxid, xid, p, EventNodeChildrenChanged, f)
 	}
@@ -439,7 +439,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) ZKResponse {
 				Path:  dataPath,
 			}
 			glog.V(7).Infof("WatchData* (%v,%v,%v)", xid, newzxid, *wresp)
-			z.s.Send(xid, newzxid, wresp)
+			z.s.Send(-1, -1, wresp)
 		}
 		z.s.Watch(op.RelativeZxid, xid, p, EventNodeDataChanged, f)
 	}
@@ -473,7 +473,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) ZKResponse {
 				Path:  existPath,
 			}
 			glog.V(7).Infof("WatchExist* (%v,%v,%v)", xid, newzxid, *wresp)
-			z.s.Send(xid, newzxid, wresp)
+			z.s.Send(-1, -1, wresp)
 		}
 		z.s.Watch(op.RelativeZxid, xid, p, ev, f)
 	}
@@ -487,7 +487,7 @@ func (z *zkEtcd) SetWatches(xid Xid, op *SetWatchesRequest) ZKResponse {
 				Path:  childPath,
 			}
 			glog.V(7).Infof("WatchChild* (%v,%v,%v)", xid, newzxid, *wresp)
-			z.s.Send(xid, newzxid, wresp)
+			z.s.Send(-1, -1, wresp)
 		}
 		z.s.Watch(op.RelativeZxid, xid, p, EventNodeChildrenChanged, f)
 	}
