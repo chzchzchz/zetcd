@@ -2,6 +2,8 @@ package xchk
 
 import (
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/chzchzchz/zetcd"
 	"github.com/golang/glog"
@@ -16,6 +18,12 @@ type conn struct {
 	readc chan zetcd.ZKRequest
 	sendc chan sendPkt
 
+	// mu protects pktmap
+	mu sync.Mutex
+
+	// oobRespPath tracks out of band events by path
+	oobRespPath map[string]chan sendPkt
+
 	workers []*connWorker
 }
 
@@ -25,8 +33,11 @@ func newConn(zkc zetcd.Conn, nworkers int) (*conn, []zetcd.Conn) {
 		stopc: make(chan struct{}),
 		donec: make(chan struct{}),
 
-		readc:   make(chan zetcd.ZKRequest, 16),
-		sendc:   make(chan sendPkt, 16),
+		readc: make(chan zetcd.ZKRequest, 16),
+		sendc: make(chan sendPkt, 16),
+
+		oobRespPath: make(map[string]chan sendPkt),
+
 		workers: make([]*connWorker, nworkers),
 	}
 
@@ -45,8 +56,51 @@ func newConn(zkc zetcd.Conn, nworkers int) (*conn, []zetcd.Conn) {
 	return c, workers
 }
 
+func (c *conn) processSendOOB(sp sendPkt) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.oobRespPath == nil {
+		return
+	}
+
+	if sp.xid != -1 {
+		panic("expected xid == -1")
+	}
+
+	if lastCh := c.oobRespPath[sp.wev.Path]; lastCh != nil {
+		lastCh <- sp
+		delete(c.oobRespPath, sp.wev.Path)
+		return
+	}
+	ch := make(chan sendPkt, 1)
+	c.oobRespPath[sp.wev.Path] = ch
+
+	go func() {
+		var newSp sendPkt
+		var ok bool
+		select {
+		case newSp, ok = <-ch:
+			if !ok {
+				return
+			}
+		case <-time.After(3 * time.Second):
+			glog.Warningf("xchk failed waited too long to match response to %+v", *sp.wev)
+			newSp = sp
+		}
+		c.mu.Lock()
+		if c.oobRespPath != nil {
+			delete(c.oobRespPath, sp.wev.Path)
+		}
+		c.mu.Unlock()
+		if newSp.zxid != sp.zxid {
+			glog.Warningf("xchk failed (xid: %d)\nzxid:%d, resp: %+v\nzxid:%d, resp: %+v", sp.xid, sp.zxid, sp.wev, newSp.zxid, newSp.wev)
+		}
+		glog.V(6).Infof("xchkSendOOB response %+v %t %T", sp.wev, sp.wev, sp.wev)
+		c.zkc.Send(sp.xid, sp.zxid, sp.wev)
+	}()
+}
+
 func (c *conn) sendLoop() {
-	// catch OOB messages from servers, propagate back to client on dupe
 	for {
 		var sp sendPkt
 		select {
@@ -54,7 +108,7 @@ func (c *conn) sendLoop() {
 		case <-c.stopc:
 			return
 		}
-		glog.V(7).Infof("XchkSendLoop: %+v", sp)
+		c.processSendOOB(sp)
 	}
 }
 
@@ -68,6 +122,12 @@ func (c *conn) StopNotify() <-chan struct{}  { return c.stopc }
 
 func (c *conn) Close() {
 	close(c.stopc)
+	c.mu.Lock()
+	for _, ch := range c.oobRespPath {
+		close(ch)
+	}
+	c.oobRespPath = nil
+	c.mu.Unlock()
 	<-c.donec
 }
 
@@ -81,13 +141,19 @@ type connWorker struct {
 type sendPkt struct {
 	xid  zetcd.Xid
 	zxid zetcd.ZXid
-	resp interface{}
+	wev  *zetcd.WatcherEvent
 }
 
 func (c *connWorker) Send(xid zetcd.Xid, zxid zetcd.ZXid, resp interface{}) error {
 	glog.V(7).Infof("connWorkerSend(%v,%v,%+v)", xid, zxid, resp)
+
+	wev, ok := resp.(*zetcd.WatcherEvent)
+	if !ok {
+		glog.Fatalf("unexpected send response %+v", resp)
+	}
+
 	select {
-	case c.parent.sendc <- sendPkt{xid, zxid, resp}:
+	case c.parent.sendc <- sendPkt{xid, zxid, wev}:
 	case <-c.stopc:
 		return fmt.Errorf("send stopped")
 	}
