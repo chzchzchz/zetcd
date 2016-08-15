@@ -134,7 +134,7 @@ func (s *session) recvLoop() {
 		if resp.Hdr.Err != 0 {
 			r = &resp.Hdr.Err
 		} else {
-			r = &resp.Resp
+			r = resp.Resp
 		}
 
 		glog.V(6).Infof("zk/zkSessOOB=%+v %+v", resp.Hdr, r)
