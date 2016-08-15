@@ -43,6 +43,8 @@ type session struct {
 	oracle    zetcd.Session
 	candidate zetcd.Session
 	req       zetcd.ConnectRequest
+
+	sp *sessionPool
 }
 
 func Auth(sp *sessionPool, zka zetcd.AuthConn, cAuth, oAuth zetcd.AuthFunc) (zetcd.Session, error) {
@@ -104,6 +106,7 @@ func Auth(sp *sessionPool, zka zetcd.AuthConn, cAuth, oAuth zetcd.AuthFunc) (zet
 		oracle:    oSession,
 		candidate: cSession,
 		req:       *ar.Req,
+		sp:        sp,
 	}, nil
 }
 

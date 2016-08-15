@@ -80,7 +80,7 @@ func (xchk *zkXchk) Exists(xid zetcd.Xid, op *zetcd.ExistsRequest) zetcd.ZKRespo
 	}
 	crr, orr := cr.Resp.(*zetcd.ExistsResponse), or.Resp.(*zetcd.ExistsResponse)
 
-	if !xchkStat(crr.Stat, orr.Stat) {
+	if !xchk.xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 	return or
@@ -99,7 +99,7 @@ func (xchk *zkXchk) GetData(xid zetcd.Xid, op *zetcd.GetDataRequest) zetcd.ZKRes
 	if bytes.Compare(crr.Data, orr.Data) != 0 {
 		err = errData
 	}
-	if !xchkStat(crr.Stat, orr.Stat) {
+	if !xchk.xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 	return or
@@ -115,7 +115,7 @@ func (xchk *zkXchk) SetData(xid zetcd.Xid, op *zetcd.SetDataRequest) zetcd.ZKRes
 	}
 	crr, orr := cr.Resp.(*zetcd.SetDataResponse), or.Resp.(*zetcd.SetDataResponse)
 
-	if !xchkStat(crr.Stat, orr.Stat) {
+	if !xchk.xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 	return or
@@ -143,7 +143,7 @@ func (xchk *zkXchk) GetAcl(xid zetcd.Xid, op *zetcd.GetAclRequest) zetcd.ZKRespo
 		}
 	}
 
-	if !xchkStat(crr.Stat, orr.Stat) {
+	if !xchk.xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 
@@ -160,7 +160,7 @@ func (xchk *zkXchk) SetAcl(xid zetcd.Xid, op *zetcd.SetAclRequest) zetcd.ZKRespo
 	}
 	crr, orr := cr.Resp.(*zetcd.SetAclResponse), or.Resp.(*zetcd.SetAclResponse)
 
-	if !xchkStat(crr.Stat, orr.Stat) {
+	if !xchk.xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 
@@ -233,7 +233,7 @@ func (xchk *zkXchk) GetChildren2(xid zetcd.Xid, op *zetcd.GetChildren2Request) z
 			return or
 		}
 	}
-	if !xchkStat(crr.Stat, orr.Stat) {
+	if !xchk.xchkStat(crr.Stat, orr.Stat) {
 		err = errStat
 	}
 	return or
@@ -320,13 +320,25 @@ func reportErr(cr, or zetcd.ZKResponse, err error) {
 	}
 }
 
-func xchkStat(s1, s2 zetcd.Stat) bool {
-	tdiff1, tdiff2 := s1.Ctime-s1.Mtime, s2.Ctime-s2.Mtime
+func (xchk *zkXchk) xchkStat(cStat, oStat zetcd.Stat) bool {
+	tdiff1, tdiff2 := cStat.Ctime-cStat.Mtime, oStat.Ctime-oStat.Mtime
 	if tdiff1 != tdiff2 && tdiff1 == 0 {
 		// expect equal times to be equal
 		return false
 	}
+
+	if oStat.EphemeralOwner != 0 {
+		csid, _ := xchk.s.sp.get(oStat.EphemeralOwner)
+		if cStat.EphemeralOwner != csid {
+			return false
+		}
+		// ephemeral owners confirmed to be equivalent
+		cStat.EphemeralOwner = oStat.EphemeralOwner
+	} else if cStat.EphemeralOwner != 0 {
+		return false
+	}
+
 	// times will never be equivalent, so fake it
-	s1.Ctime, s1.Mtime = s2.Ctime, s2.Mtime
-	return s1 == s2
+	cStat.Ctime, cStat.Mtime = oStat.Ctime, oStat.Mtime
+	return cStat == oStat
 }
