@@ -63,7 +63,8 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 
 		nextCVer := encodeInt64(decodeInt64([]byte(s.Get(pkey))) + 1)
 		s.Put("/zk/cver/"+pp, nextCVer)
-		s.Put("/zk/mtime/"+pp, t)
+		// creating a znode will NOT update its parent mtime
+		// s.Put("/zk/mtime/"+pp, t)
 
 		s.Put(key, string(op.Data), opts...)
 		s.Put("/zk/ctime/"+p, t, opts...)
