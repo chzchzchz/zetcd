@@ -92,10 +92,10 @@ func (c *conn) processSendOOB(sp sendPkt) {
 			delete(c.oobRespPath, sp.wev.Path)
 		}
 		c.mu.Unlock()
-		if newSp.zxid != sp.zxid {
-			glog.Warningf("xchk failed (xid: %d)\nzxid:%d, resp: %+v\nzxid:%d, resp: %+v", sp.xid, sp.zxid, sp.wev, newSp.zxid, newSp.wev)
+		if *newSp.wev != *sp.wev {
+			glog.Warningf("xchk failed (path:%q): %+v != %+v", sp.wev.Path, *sp.wev, *newSp.wev)
 		}
-		glog.V(6).Infof("xchkSendOOB response %+v %t %T", sp.wev, sp.wev, sp.wev)
+		glog.V(6).Infof("xchkSendOOB response %+v", *sp.wev)
 		c.zkc.Send(sp.xid, sp.zxid, sp.wev)
 	}()
 }
