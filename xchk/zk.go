@@ -321,8 +321,8 @@ func reportErr(cr, or zetcd.ZKResponse, err error) {
 }
 
 func (xchk *zkXchk) xchkStat(cStat, oStat zetcd.Stat) bool {
-	tdiff1, tdiff2 := cStat.Ctime-cStat.Mtime, oStat.Ctime-oStat.Mtime
-	if tdiff1 != tdiff2 && tdiff1 == 0 {
+	ctdiff, otdiff := cStat.Ctime-cStat.Mtime, oStat.Ctime-oStat.Mtime
+	if ctdiff != otdiff && otdiff == 0 {
 		// expect equal times to be equal
 		return false
 	}
