@@ -241,6 +241,7 @@ func runTest(t *testing.T, f func(*testing.T, *zk.Conn)) {
 
 	clus.Terminate(t)
 	cancel()
+	c.Close()
 	<-ch
 
 }
