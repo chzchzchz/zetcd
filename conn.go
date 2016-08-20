@@ -2,8 +2,11 @@ package zetcd
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net"
 	"sync"
+
+	"github.com/golang/glog"
 )
 
 type Conn interface {
@@ -29,6 +32,16 @@ type ZKRequest struct {
 	xid Xid
 	req interface{}
 	err error
+}
+
+func (zk *ZKRequest) String() string {
+	if zk.req != nil {
+		return fmt.Sprintf("{xid:%v req:%T:%+v}", zk.xid, zk.req, zk.req)
+	}
+	if zk.err != nil {
+		return fmt.Sprintf("{xid:%v err:%q}", zk.xid, zk.err)
+	}
+	return fmt.Sprintf("{xid:%v err:%q}", zk.xid, zk.err)
 }
 
 func NewConn(zk net.Conn) Conn {
@@ -103,6 +116,7 @@ func (c *conn) Send(xid Xid, zxid ZXid, resp interface{}) error {
 	defer c.mu.RUnlock()
 	select {
 	case c.outc <- buf[:4+pktlen]:
+		glog.V(9).Infof("conn.Send(xid=%v, zxid=%v, %+v)", xid, zxid, resp)
 	case <-c.donec:
 	}
 	return nil

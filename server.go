@@ -8,6 +8,7 @@ import (
 )
 
 func handle(conn net.Conn, auth AuthFunc, zk ZKFunc) {
+	glog.V(6).Infof("accepted remote connection %q", conn.RemoteAddr())
 	s, serr := auth(NewAuthConn(conn))
 	if serr != nil {
 		return
@@ -17,14 +18,18 @@ func handle(conn net.Conn, auth AuthFunc, zk ZKFunc) {
 		s.Close()
 		return
 	}
-	defer zke.CloseZK()
+	defer func() {
+		glog.V(6).Infof("closing remote connection %q", conn.RemoteAddr())
+		zke.CloseZK()
+	}()
 	for zkreq := range s.Read() {
-		glog.V(9).Infof("zkreq=%+v", zkreq)
+		glog.V(9).Infof("zkreq=%v", &zkreq)
 		if zkreq.err != nil {
 			break
 		}
 		zkresp := DispatchZK(zke, zkreq.xid, zkreq.req)
 		if zkresp.Err != nil {
+			glog.V(9).Infof("dispatch error", zkresp.Err)
 			break
 		}
 		if zkresp.Hdr.Err == 0 {
