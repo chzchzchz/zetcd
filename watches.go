@@ -9,7 +9,10 @@ import (
 )
 
 type Watches interface {
+	// Watch creates a watch request on a given path and evtype.
 	Watch(rev ZXid, xid Xid, path string, evtype EventType, cb func(ZXid))
+
+	// Wait blocks until all watches that rely on the given rev are dispatched.
 	Wait(rev ZXid, path string, evtype EventType)
 }
 
@@ -17,7 +20,7 @@ type watches struct {
 	mu sync.Mutex
 	c  *etcd.Client
 
-	xid2watch map[Xid]*watch
+	path2watch [5]map[string]*watch
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -68,14 +71,25 @@ func (w *watch) isRelevant(ev *etcd.Event) (relevant bool) {
 
 func newWatches(c *etcd.Client) *watches {
 	ctx, cancel := context.WithCancel(context.TODO())
-	return &watches{
-		c:         c,
-		xid2watch: make(map[Xid]*watch),
-		ctx:       ctx,
-		cancel:    cancel}
+	ws := &watches{
+		c:      c,
+		ctx:    ctx,
+		cancel: cancel,
+	}
+	for i := 0; i < len(ws.path2watch); i++ {
+		ws.path2watch[i] = make(map[string]*watch)
+	}
+	return ws
 }
 
 func (ws *watches) Watch(rev ZXid, xid Xid, path string, evtype EventType, cb func(ZXid)) {
+	ws.mu.Lock()
+	curw := ws.path2watch[evtype][path]
+	ws.mu.Unlock()
+	if curw != nil {
+		return
+	}
+
 	ctx, cancel := context.WithCancel(ws.ctx)
 	var wch etcd.WatchChan
 	switch evtype {
@@ -83,25 +97,29 @@ func (ws *watches) Watch(rev ZXid, xid Xid, path string, evtype EventType, cb fu
 		fallthrough
 	case EventNodeCreated:
 		fallthrough
+	// use rev+1 watch begins AFTER the requested zxid
 	case EventNodeDeleted:
-		wch = ws.c.Watch(ctx, "/zk/key/"+path, etcd.WithRev(int64(rev)))
+		wch = ws.c.Watch(ctx, "/zk/key/"+path, etcd.WithRev(int64(rev+1)))
 	case EventNodeChildrenChanged:
 		wch = ws.c.Watch(
 			ctx,
 			getListPfx(path),
 			etcd.WithPrefix(),
-			etcd.WithRev(int64(rev)))
+			etcd.WithRev(int64(rev+1)))
 	default:
-		// getchildren case is a little trickier...
 		panic("unsupported watch op")
 	}
 
-	w := &watch{ws.c, xid, evtype, path, wch, ctx, cancel, rev, make(chan struct{})}
-
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
-	ws.xid2watch[xid] = w
-
+	curw = ws.path2watch[evtype][path]
+	if curw != nil {
+		glog.V(7).Infof("ELIDING WATCH on xid=%d evtype=%d, already have %s evtype=%d", xid, evtype, path, curw.evtype)
+		cancel()
+		return
+	}
+	w := &watch{ws.c, xid, evtype, path, wch, ctx, cancel, rev, make(chan struct{})}
+	ws.path2watch[evtype][path] = w
 	go ws.runWatch(w, cb)
 }
 
@@ -109,11 +127,6 @@ func (ws *watches) runWatch(w *watch, cb func(ZXid)) {
 	defer func() {
 		close(w.donec)
 		<-w.wch
-		ws.mu.Lock()
-		if ws.xid2watch != nil {
-			delete(ws.xid2watch, w.xid)
-		}
-		ws.mu.Unlock()
 	}()
 	for {
 		select {
@@ -122,10 +135,14 @@ func (ws *watches) runWatch(w *watch, cb func(ZXid)) {
 				return
 			}
 			for _, ev := range resp.Events {
-				if w.isRelevant(ev) {
-					cb(ZXid(resp.Header.Revision))
-					w.cancel()
+				if !w.isRelevant(ev) {
+					continue
 				}
+				ws.mu.Lock()
+				delete(ws.path2watch[w.evtype], w.path)
+				ws.mu.Unlock()
+				cb(ZXid(resp.Header.Revision))
+				w.cancel()
 			}
 		case <-w.ctx.Done():
 		}
@@ -136,22 +153,24 @@ func (ws *watches) close() {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	ws.cancel()
-	for _, w := range ws.xid2watch {
-		for range w.wch {
+	for i := range ws.path2watch {
+		for _, w := range ws.path2watch[i] {
+			for range w.wch {
+			}
 		}
 	}
-	ws.xid2watch = nil
 }
 
-// wait until watcher depending on this completes
-// note: path is internal zkpath representation
+// Wait until watcher depending on the given rev completes.
+// NOTE: path is internal zkpath representation
 // TODO: watch waiting may need to be proxy-wide to be correct
 // TODO: better algorithm
 func (ws *watches) Wait(rev ZXid, path string, evtype EventType) {
 	ch := []<-chan struct{}{}
+	rev++
 	ws.mu.Lock()
-	for _, w := range ws.xid2watch {
-		if w.path != path {
+	for k, w := range ws.path2watch[evtype] {
+		if k != path {
 			continue
 		}
 		if w.startRev <= rev && w.evtype == evtype {
