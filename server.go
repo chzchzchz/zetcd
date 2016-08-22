@@ -2,51 +2,132 @@ package zetcd
 
 import (
 	"net"
+	"sync"
 
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 )
 
-func handle(conn net.Conn, auth AuthFunc, zk ZKFunc) {
-	glog.V(6).Infof("accepted remote connection %q", conn.RemoteAddr())
-	s, serr := auth(NewAuthConn(conn))
-	if serr != nil {
-		return
-	}
-	zke, zkerr := zk(s)
-	if zkerr != nil {
-		s.Close()
-		return
-	}
-	defer func() {
-		glog.V(6).Infof("closing remote connection %q", conn.RemoteAddr())
-		zke.CloseZK()
-	}()
-	for zkreq := range s.Read() {
-		glog.V(9).Infof("zkreq=%v", &zkreq)
-		if zkreq.err != nil {
-			break
+type acceptHandler func(conn net.Conn, auth AuthFunc, zk ZKFunc)
+
+// Serve will launch a concurrent goroutine for each zookeeper request.
+func Serve(ctx context.Context, ln net.Listener, auth AuthFunc, zk ZKFunc) {
+	serveByHandler(handleSessionConcurrentRequests, ctx, ln, auth, zk)
+}
+
+// ServeSerial has at most one inflight request at a time so two servers can be
+// reliably cross checked.
+func ServeSerial(ctx context.Context, ln net.Listener, auth AuthFunc, zk ZKFunc) {
+	serveByHandler(newHandleGlobalSerialRequests(), ctx, ln, auth, zk)
+}
+
+func newHandleGlobalSerialRequests() acceptHandler {
+	var mu sync.Mutex
+	return func(conn net.Conn, auth AuthFunc, zk ZKFunc) {
+		s, zke, serr := openSession(conn, auth, zk)
+		if serr != nil {
+			return
 		}
-		zkresp := DispatchZK(zke, zkreq.xid, zkreq.req)
-		if zkresp.Err != nil {
-			glog.V(9).Infof("dispatch error", zkresp.Err)
-			break
-		}
-		if zkresp.Hdr.Err == 0 {
-			s.Send(zkresp.Hdr.Xid, zkresp.Hdr.Zxid, zkresp.Resp)
-		} else {
-			s.Send(zkresp.Hdr.Xid, zkresp.Hdr.Zxid, &zkresp.Hdr.Err)
+		defer zke.CloseZK()
+		for zkreq := range s.Read() {
+			mu.Lock()
+			err := serveRequest(s, zke, zkreq)
+			mu.Unlock()
+			if err != nil {
+				return
+			}
 		}
 	}
 }
 
-func Serve(ctx context.Context, ln net.Listener, auth AuthFunc, zk ZKFunc) {
+func newHandleGlobalSerialSessions(ch acceptHandler) acceptHandler {
+	var mu sync.Mutex
+	return func(conn net.Conn, auth AuthFunc, zk ZKFunc) {
+		mu.Lock()
+		defer mu.Unlock()
+		ch(conn, auth, zk)
+	}
+}
+
+func handleSessionSerialRequests(conn net.Conn, auth AuthFunc, zk ZKFunc) {
+	s, zke, serr := openSession(conn, auth, zk)
+	if serr != nil {
+		return
+	}
+	defer zke.CloseZK()
+	for zkreq := range s.Read() {
+		if err := serveRequest(s, zke, zkreq); err != nil {
+			return
+		}
+	}
+}
+
+func handleSessionConcurrentRequests(conn net.Conn, auth AuthFunc, zk ZKFunc) {
+	s, zke, serr := openSession(conn, auth, zk)
+	if serr != nil {
+		return
+	}
+	defer zke.CloseZK()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	for zkreq := range s.Read() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := serveRequest(s, zke, zkreq); err != nil {
+				return
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func newHandleLogClose(ch acceptHandler) acceptHandler {
+	return func(conn net.Conn, auth AuthFunc, zk ZKFunc) {
+		glog.V(6).Infof("closing remote connection %q", conn.RemoteAddr())
+		ch(conn, auth, zk)
+	}
+}
+
+func serveRequest(s Session, zke ZK, zkreq ZKRequest) error {
+	glog.V(9).Infof("zkreq=%v", &zkreq)
+	if zkreq.err != nil {
+		return zkreq.err
+	}
+	zkresp := DispatchZK(zke, zkreq.xid, zkreq.req)
+	if zkresp.Err != nil {
+		glog.V(9).Infof("dispatch error", zkresp.Err)
+		return zkresp.Err
+	}
+	if zkresp.Hdr.Err == 0 {
+		s.Send(zkresp.Hdr.Xid, zkresp.Hdr.Zxid, zkresp.Resp)
+	} else {
+		s.Send(zkresp.Hdr.Xid, zkresp.Hdr.Zxid, &zkresp.Hdr.Err)
+	}
+	return nil
+}
+
+func openSession(conn net.Conn, auth AuthFunc, zk ZKFunc) (Session, ZK, error) {
+	glog.V(6).Infof("accepted remote connection %q", conn.RemoteAddr())
+	s, serr := auth(NewAuthConn(conn))
+	if serr != nil {
+		return nil, nil, serr
+	}
+	zke, zkerr := zk(s)
+	if zkerr != nil {
+		s.Close()
+		return nil, nil, zkerr
+	}
+	return s, zke, nil
+}
+
+func serveByHandler(h acceptHandler, ctx context.Context, ln net.Listener, auth AuthFunc, zk ZKFunc) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			glog.V(5).Infof("Accept()=%v", err)
 		} else {
-			go handle(conn, auth, zk)
+			go h(conn, auth, zk)
 		}
 		select {
 		case <-ctx.Done():

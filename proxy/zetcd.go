@@ -78,6 +78,7 @@ func main() {
 	}
 
 	var p personality
+	serv := zetcd.Serve
 	switch {
 	case *oracle != "":
 		if len(*etcdAddr) == 0 || len(*bridgeAddr) == 0 {
@@ -85,6 +86,7 @@ func main() {
 			os.Exit(1)
 		}
 		p = newOracle(*etcdAddr, *bridgeAddr, *oracle)
+		serv = zetcd.ServeSerial
 	case len(*etcdAddr) != 0 && len(*bridgeAddr) != 0:
 		fmt.Println("expected -endpoint or -zkbridge but not both")
 		os.Exit(1)
@@ -97,5 +99,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	zetcd.Serve(p.ctx, ln, p.authf, p.zkf)
+	serv(p.ctx, ln, p.authf, p.zkf)
 }
