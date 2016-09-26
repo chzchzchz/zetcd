@@ -39,15 +39,18 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 	key := "/zk/key/" + p
 	pkey := "/zk/cver/" + pp
 
-	applyf := func(s v3sync.STM) error {
+	applyf := func(s v3sync.STM) (err error)  {
+		defer func() {
+			if PerfectZXidMode && err != nil {
+				s.Put("/zk/moron-node", "1")
+			}
+		}()
+
 		if len(op.Acl) == 0 {
 			return ErrInvalidACL
 		}
 		if s.Rev(pkey) == 0 && len(pp) != 2 {
 			// no parent
-			if PerfectZXidMode {
-				s.Put("/zk/moron-node", "1")
-			}
 			return ErrNoNode
 		}
 		if s.Rev("/zk/ver/"+p) != 0 {
