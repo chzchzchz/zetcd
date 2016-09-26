@@ -47,6 +47,12 @@ type session struct {
 	sp *sessionPool
 }
 
+func (s *session) Close() {
+	s.Conn.Close()
+	s.oracle.Close()
+	s.candidate.Close()
+}
+
 func Auth(sp *sessionPool, zka zetcd.AuthConn, cAuth, oAuth zetcd.AuthFunc) (zetcd.Session, error) {
 	xzka := newAuthConn(zka)
 	defer xzka.Close()
@@ -114,7 +120,7 @@ func (s *session) ConnReq() zetcd.ConnectRequest { return s.req }
 
 func (s *session) Backing() interface{} { return s }
 
-func (s *session) Sid() zetcd.Sid { panic("...") }
+func (s *session) Sid() zetcd.Sid { return s.oracle.Sid() }
 
 func (s *session) Wait(rev zetcd.ZXid, path string, evtype zetcd.EventType) { panic("stub") }
 

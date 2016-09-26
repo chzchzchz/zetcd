@@ -101,6 +101,7 @@ func (c *conn) processSendOOB(sp sendPkt) {
 }
 
 func (c *conn) sendLoop() {
+	defer close(c.donec)
 	for {
 		var sp sendPkt
 		select {
@@ -162,4 +163,9 @@ func (c *connWorker) Send(xid zetcd.Xid, zxid zetcd.ZXid, resp interface{}) erro
 
 func (c *connWorker) Read() <-chan zetcd.ZKRequest { return c.readc }
 func (c *connWorker) StopNotify() <-chan struct{}  { return c.stopc }
-func (c *connWorker) Close()                       { close(c.stopc) }
+func (c *connWorker) Close() {
+	if c.readc != nil {
+		c.readc = nil
+		close(c.stopc)
+	}
+}

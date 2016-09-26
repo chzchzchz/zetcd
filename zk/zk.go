@@ -17,11 +17,6 @@ func newZK(s zetcd.Session) (*zkZK, error) {
 	return &zkZK{ss}, nil
 }
 
-func (zz *zkZK) CloseZK() error {
-	zz.s.Close()
-	return nil
-}
-
 func (zz *zkZK) Create(xid zetcd.Xid, op *zetcd.CreateRequest) zetcd.ZKResponse {
 	return <-zz.s.future(xid, op)
 }

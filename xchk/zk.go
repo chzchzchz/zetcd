@@ -36,13 +36,10 @@ func newZK(s *session, cZKf, oZKf zetcd.ZKFunc) (*zkXchk, error) {
 	}
 	oZK, oerr := oZKf(s.oracle)
 	if oerr != nil {
-		cZK.CloseZK()
 		return nil, oerr
 	}
 	return &zkXchk{s, cZK, oZK}, nil
 }
-
-func (xchk *zkXchk) CloseZK() error { return nil }
 
 func (xchk *zkXchk) Create(xid zetcd.Xid, op *zetcd.CreateRequest) zetcd.ZKResponse {
 	cf := func() zetcd.ZKResponse { return xchk.cZK.Create(xid, op) }

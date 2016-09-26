@@ -84,5 +84,3 @@ func (zl *zkLog) SetWatches(xid Xid, op *SetWatchesRequest) ZKResponse {
 	glog.V(7).Infof("SetWatches(%v,%+v)", xid, *op)
 	return zl.zk.SetWatches(xid, op)
 }
-
-func (zl *zkLog) CloseZK() error { return zl.zk.CloseZK() }

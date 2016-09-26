@@ -23,11 +23,6 @@ var PerfectZXidMode bool = true
 
 func NewZKEtcd(c *etcd.Client, s Session) ZK { return &zkEtcd{c, s} }
 
-func (z *zkEtcd) CloseZK() error {
-	z.s.Close()
-	return nil
-}
-
 func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 	opts := []etcd.OpOption{}
 	switch op.Flags {
@@ -530,10 +525,14 @@ func encodeInt64(v int64) string {
 func mkErr(err error) ZKResponse { return ZKResponse{Err: err} }
 
 func mkZKErr(xid Xid, zxid ZXid, err ErrCode) ZKResponse {
+	// zxid is -1 because etcd starts at 1 but zk starts at 0
+	zxid--
 	return ZKResponse{Hdr: &ResponseHeader{xid, zxid, err}}
 }
 
 func mkZKResp(xid Xid, zxid ZXid, resp interface{}) ZKResponse {
+	// zxid is -1 because etcd starts at 1 but zk starts at 0
+	zxid--
 	return ZKResponse{Hdr: &ResponseHeader{xid, zxid, 0}, Resp: resp}
 }
 

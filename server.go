@@ -28,7 +28,8 @@ func newHandleGlobalSerialRequests() acceptHandler {
 		if serr != nil {
 			return
 		}
-		defer zke.CloseZK()
+		defer s.Close()
+		glog.V(9).Infof("serving global serial session requests on s=%+v", s)
 		for zkreq := range s.Read() {
 			mu.Lock()
 			err := serveRequest(s, zke, zkreq)
@@ -54,7 +55,8 @@ func handleSessionSerialRequests(conn net.Conn, auth AuthFunc, zk ZKFunc) {
 	if serr != nil {
 		return
 	}
-	defer zke.CloseZK()
+	defer s.Close()
+	glog.V(9).Infof("serving serial session requests on id=%x", s.Sid())
 	for zkreq := range s.Read() {
 		if err := serveRequest(s, zke, zkreq); err != nil {
 			return
@@ -67,9 +69,10 @@ func handleSessionConcurrentRequests(conn net.Conn, auth AuthFunc, zk ZKFunc) {
 	if serr != nil {
 		return
 	}
-	defer zke.CloseZK()
+	defer s.Close()
 	var wg sync.WaitGroup
 	wg.Add(1)
+	glog.V(9).Infof("serving concurrent session requests on id=%x", s.Sid())
 	for zkreq := range s.Read() {
 		wg.Add(1)
 		go func() {
