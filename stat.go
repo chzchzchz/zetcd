@@ -28,11 +28,11 @@ func statTxn(txnresp *etcd.TxnResponse) (s Stat) {
 	// XXX hack: need to format zk / node instead of this garbage
 	if len(ctime.Kvs) != 0 {
 		s.Ctime = decodeInt64(ctime.Kvs[0].Value)
-		s.Czxid = ZXid(ctime.Kvs[0].ModRevision)
+		s.Czxid = rev2zxid(ctime.Kvs[0].ModRevision)
 		s.Pzxid = s.Czxid
 	}
 	if len(mtime.Kvs) != 0 {
-		s.Mzxid = ZXid(mtime.Kvs[0].ModRevision)
+		s.Mzxid = rev2zxid(mtime.Kvs[0].ModRevision)
 		s.Mtime = decodeInt64(mtime.Kvs[0].Value)
 		s.Version = Ver(mtime.Kvs[0].Version - 1)
 	}
@@ -48,7 +48,7 @@ func statTxn(txnresp *etcd.TxnResponse) (s Stat) {
 	}
 	s.NumChildren = int32(len(children.Kvs))
 	if s.NumChildren > 0 {
-		s.Pzxid = ZXid(children.Kvs[0].ModRevision)
+		s.Pzxid = rev2zxid(children.Kvs[0].ModRevision)
 	}
 	return s
 }

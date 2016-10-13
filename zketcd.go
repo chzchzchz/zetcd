@@ -106,7 +106,7 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 	z.s.Wait(zxid, p, EventNodeCreated)
 	crResp := &CreateResponse{op.Path}
 
-	glog.V(7).Infof("Create(%v) = (zxid=%v, resp=%+v)", zxid, xid, *crResp)
+	glog.V(7).Infof("Create(%v) = (zxid=%v, resp=%+v); txnresp.Header: %+v", zxid, xid, *crResp, resp.Header)
 	return mkZKResp(xid, zxid, crResp)
 }
 
@@ -535,16 +535,17 @@ func encodeInt64(v int64) string {
 
 func mkErr(err error) ZKResponse { return ZKResponse{Err: err} }
 
-func mkZKErr(xid Xid, zxid ZXid, err ErrCode) ZKResponse {
+func rev2zxid(rev int64) ZXid {
 	// zxid is -1 because etcd starts at 1 but zk starts at 0
-	zxid--
-	return ZKResponse{Hdr: &ResponseHeader{xid, zxid, err}}
+	return ZXid(rev - 1)
+}
+
+func mkZKErr(xid Xid, zxid ZXid, err ErrCode) ZKResponse {
+	return ZKResponse{Hdr: &ResponseHeader{xid, zxid - 1, err}}
 }
 
 func mkZKResp(xid Xid, zxid ZXid, resp interface{}) ZKResponse {
-	// zxid is -1 because etcd starts at 1 but zk starts at 0
-	zxid--
-	return ZKResponse{Hdr: &ResponseHeader{xid, zxid, 0}, Resp: resp}
+	return ZKResponse{Hdr: &ResponseHeader{xid, zxid - 1, 0}, Resp: resp}
 }
 
 // wrapErr is to pass back error info but still get the txn response
