@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/gob"
+	"fmt"
 	"path"
 	"strings"
 	"time"
@@ -25,21 +26,18 @@ func NewZKEtcd(c *etcd.Client, s Session) ZK { return &zkEtcd{c, s} }
 
 func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 	opts := []etcd.OpOption{}
-	switch op.Flags {
-	case 0:
-	case FlagEphemeral:
+	if (op.Flags & FlagEphemeral) != 0 {
 		opts = append(opts, etcd.WithLease(etcd.LeaseID(z.s.Sid())))
-	default:
+	}
+	if (op.Flags & ^(FlagSequence | FlagEphemeral)) != 0 {
 		// support seq flag
 		panic("unsupported create flags")
 	}
 
-	p := mkPath(op.Path)
+	var p string // path of new node, passed back from txn
 	pp := mkPath(path.Dir(op.Path))
-	key := "/zk/key/" + p
 	pkey := "/zk/cver/" + pp
-
-	applyf := func(s v3sync.STM) (err error)  {
+	applyf := func(s v3sync.STM) (err error) {
 		defer func() {
 			if PerfectZXidMode && err != nil {
 				s.Put("/zk/moron-node", "1")
@@ -53,7 +51,15 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 			// no parent
 			return ErrNoNode
 		}
-		if s.Rev("/zk/ver/"+p) != 0 {
+
+		p = mkPath(op.Path)
+		if op.Flags&FlagSequence != 0 {
+			count := int32(decodeInt64([]byte(s.Get("/zk/count/" + pp))))
+			// force as int32 to get integer overflow as per zk docs
+			p += fmt.Sprintf("%010d", count)
+			count++
+			s.Put("/zk/count/"+pp, encodeInt64(int64(count)))
+		} else if s.Rev("/zk/ver/"+p) != 0 {
 			return ErrNodeExists
 		}
 
@@ -64,13 +70,14 @@ func (z *zkEtcd) Create(xid Xid, op *CreateRequest) ZKResponse {
 		// creating a znode will NOT update its parent mtime
 		// s.Put("/zk/mtime/"+pp, t)
 
-		s.Put(key, string(op.Data), opts...)
+		s.Put("/zk/key/"+p, string(op.Data), opts...)
 		s.Put("/zk/ctime/"+p, t, opts...)
 		s.Put("/zk/mtime/"+p, t, opts...)
 		s.Put("/zk/ver/"+p, encodeInt64(0), opts...)
 		s.Put("/zk/cver/"+p, encodeInt64(0), opts...)
 		s.Put("/zk/aver/"+p, encodeInt64(0), opts...)
 		s.Put("/zk/acl/"+p, encodeACLs(op.Acl), opts...)
+		s.Put("/zk/count/"+p, encodeInt64(0), opts...)
 
 		return nil
 	}
@@ -187,6 +194,7 @@ func (z *zkEtcd) Delete(xid Xid, op *DeleteRequest) ZKResponse {
 		s.Del("/zk/cver/" + p)
 		s.Del("/zk/aver/" + p)
 		s.Del("/zk/acl/" + p)
+		s.Del("/zk/count/" + p)
 
 		return nil
 	}

@@ -44,6 +44,26 @@ func TestCreateGet(t *testing.T) {
 	})
 }
 
+func TestCreateSequential(t *testing.T) {
+	runTest(t, func(t *testing.T, c *zk.Conn) {
+		if _, err := c.Create("/abc", []byte("x"), 0, acl); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Create("/abc/def", []byte("x"), zk.FlagSequence, acl); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.Create("/abc/def", []byte("x"), zk.FlagSequence, acl); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := c.Get("/abc/def0000000000"); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := c.Get("/abc/def0000000001"); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
 func TestGetDataW(t *testing.T) {
 	runTest(t, func(t *testing.T, c *zk.Conn) {
 		if _, err := c.Create("/abc", []byte("data1"), 0, acl); err != nil {
