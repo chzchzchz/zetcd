@@ -6,5 +6,4 @@ if [ -z "$1" ]; then
 fi
 
 docker build -t `whoami`/zookeeper:3.4.8 .
-docker run  -p 192.168.2.1:"$1":2181 -t `whoami`/zookeeper:3.4.8 . start
-
+docker run  -p "$1":2181 -t `whoami`/zookeeper:3.4.8 . start

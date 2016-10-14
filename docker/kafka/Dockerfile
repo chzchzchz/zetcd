@@ -22,9 +22,5 @@ ENV AUTO_CREATE_TOPICS true
 ENV BROKER_ID 1
 # 9092 is kafka port
 EXPOSE 9092
-
-ENV ZK_HOST 172.20.0.1:2181
-
 ADD start-kafka.sh /usr/bin/start-kafka.sh
-
 ENTRYPOINT ["/usr/bin/start-kafka.sh"]
