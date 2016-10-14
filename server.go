@@ -10,9 +10,9 @@ import (
 
 type acceptHandler func(conn net.Conn, auth AuthFunc, zk ZKFunc)
 
-// Serve will launch a concurrent goroutine for each zookeeper request.
+// Serve will serve multiple sessions in concurrently.
 func Serve(ctx context.Context, ln net.Listener, auth AuthFunc, zk ZKFunc) {
-	serveByHandler(handleSessionConcurrentRequests, ctx, ln, auth, zk)
+	serveByHandler(handleSessionSerialRequests, ctx, ln, auth, zk)
 }
 
 // ServeSerial has at most one inflight request at a time so two servers can be
